@@ -11,7 +11,7 @@ from touchdown_analyzer import __version__
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="touchdown-analyzer",
-        description="Analyze touchdown data.",
+        description="Analyze glider landings: segment clips and measure touchdown displacement.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser

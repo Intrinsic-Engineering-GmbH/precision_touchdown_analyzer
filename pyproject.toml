@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "touchdown-analyzer"
 version = "0.1.0"
-description = "Touchdown analyzer"
+description = "Video-based landing accuracy measurement for glider spot-landing competitions"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Intrinsic Engineering GmbH" }]
