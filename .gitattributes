@@ -1,0 +1,35 @@
+# Normalize line endings: LF in the repository, native in the working tree.
+* text=auto
+
+# Explicitly text
+*.py      text diff=python
+*.pyi     text diff=python
+*.md      text
+*.txt     text
+*.toml    text
+*.cfg     text
+*.ini     text
+*.json    text
+*.yml     text
+*.yaml    text
+*.csv     text
+*.igc     text
+
+# Windows-only scripts keep CRLF, shell scripts keep LF
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+*.sh      text eol=lf
+
+# Binary - never diff or convert
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.pdf     binary
+*.xlsx    binary
+*.xls     binary
+*.zip     binary
+*.parquet binary
+*.npy     binary
+*.npz     binary

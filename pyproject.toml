@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "touchdown-analyzer"
+version = "0.1.0"
+description = "Touchdown analyzer"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Intrinsic Engineering GmbH" }]
+# Runtime dependencies are kept in requirements.txt; mirror them here if the
+# package is ever published or installed as a dependency elsewhere.
+dependencies = []
+
+[project.scripts]
+touchdown-analyzer = "touchdown_analyzer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["touchdown_analyzer"]
+mypy_path = "src"
+warn_unused_ignores = true
+warn_return_any = true
