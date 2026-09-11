@@ -21,10 +21,11 @@ from typing import Any
 from touchdown_analyzer.calibration import homography as hg
 from touchdown_analyzer.capture import ffmpeg as ff
 from touchdown_analyzer.capture import frames as frames_mod
+from touchdown_analyzer.capture import preview as preview_mod
 from touchdown_analyzer.capture import probe as probe_mod
 from touchdown_analyzer.capture import recorder as recorder_mod
 from touchdown_analyzer.capture import segments as segments_mod
-from touchdown_analyzer.config import RecorderConfig, redact
+from touchdown_analyzer.config import RecorderConfig, redact, remember_source, saved_source
 
 _GB = 1024**3
 
@@ -110,6 +111,41 @@ class CaptureService:
         except ff.FfmpegNotFound as exc:
             raise ServiceError(str(exc)) from exc
 
+    # -- source -----------------------------------------------------------
+
+    def resolve_source(self, source: str, *, remember: bool = False) -> str:
+        """A given source, else the one saved in .env.
+
+        The browser never needs the saved URL itself - it sends an empty
+        source and the server fills it in - so the camera password stays on
+        this machine even when the UI is served to the field WiFi.
+        """
+        source = source.strip()
+        if source:
+            if remember and source != saved_source():
+                remember_source(source)
+            return source
+        saved = saved_source()
+        if saved:
+            return saved
+        raise ServiceError("a source is required (none given and none saved)")
+
+    # -- live preview -----------------------------------------------------
+
+    def open_preview(
+        self, source: str, *, fps: int, width: int, rtsp_transport: str = "tcp"
+    ) -> preview_mod.Preview:
+        """A viewfinder stream. Runs alongside a recording; it is a separate
+        RTSP session and far smaller than the one being written to disk."""
+        source = self.resolve_source(source)
+        ffmpeg, _ = self.tools()
+        try:
+            return preview_mod.open_preview(
+                source, ffmpeg, fps=fps, width=width, rtsp_transport=rtsp_transport
+            )
+        except preview_mod.PreviewError as exc:
+            raise ServiceError(str(exc)) from exc
+
     # -- recording --------------------------------------------------------
 
     @property
@@ -127,19 +163,19 @@ class CaptureService:
         rtsp_transport: str = "tcp",
         min_free_gb: float = 20.0,
         duration_s: float = 0.0,
+        remember: bool = False,
     ) -> None:
         """Begin a recording session in a background thread."""
         with self._lock:
             if self.is_recording:
                 raise ServiceError("a recording is already running")
-            if not source.strip():
-                raise ServiceError("a source is required")
             if not session.strip():
                 raise ServiceError("a session name is required")
+            source = self.resolve_source(source, remember=remember)
 
             ffmpeg, ffprobe = self.tools()
             config = RecorderConfig(
-                source=source.strip(),
+                source=source,
                 session=session.strip(),
                 root=self.root,
                 segment_seconds=segment_seconds,
@@ -184,11 +220,13 @@ class CaptureService:
     def status(self) -> dict[str, Any]:
         config, stats = self._config, self._stats
         running = self.is_recording
+        saved = saved_source()
 
         payload: dict[str, Any] = {
             "recording": running,
             "error": self._error,
             "root": str(self.root),
+            "saved_source": redact(saved) if saved else None,
             "free_gb": self._free_gb(),
             "session": None,
             "source": None,
@@ -263,17 +301,19 @@ class CaptureService:
         seconds: float = 30.0,
         target_fps: float = 60.0,
         rtsp_transport: str = "tcp",
+        remember: bool = False,
     ) -> ProbeJob:
         """Run the pre-flight check in the background."""
         with self._lock:
             if self._probe_thread is not None and self._probe_thread.is_alive():
                 raise ServiceError("a probe is already running")
-            if not source.strip():
-                raise ServiceError("a source is required")
+            source = self.resolve_source(source, remember=remember)
 
             ffmpeg, ffprobe = self.tools()
+            # The job is what /api/status returns, so it holds the redacted
+            # URL; the real one lives only in the closure below.
             job = ProbeJob(
-                source=source.strip(),
+                source=redact(source),
                 started_utc=datetime.now(UTC).isoformat(),
             )
             self._probe = job
@@ -281,7 +321,7 @@ class CaptureService:
             def run() -> None:
                 try:
                     checks = probe_mod.run(
-                        job.source,
+                        source,
                         ffmpeg,
                         ffprobe,
                         seconds=seconds,
@@ -321,10 +361,11 @@ class CaptureService:
     def calibration_frame_path(self) -> Path:
         return self.config_dir / "calibration_frame.jpg"
 
-    def grab_calibration_frame(self, source: str, *, rtsp_transport: str = "tcp") -> dict[str, Any]:
+    def grab_calibration_frame(
+        self, source: str, *, rtsp_transport: str = "tcp", remember: bool = False
+    ) -> dict[str, Any]:
         """Capture the still the survey markers get clicked on."""
-        if not source.strip():
-            raise ServiceError("a source is required")
+        source = self.resolve_source(source, remember=remember)
         if self.is_recording:
             # One ffmpeg reading the camera at a time; the recorder wins.
             raise ServiceError("stop the recording before grabbing a calibration frame")
@@ -332,7 +373,7 @@ class CaptureService:
         ffmpeg, ffprobe = self.tools()
         try:
             path = frames_mod.grab(
-                source.strip(),
+                source,
                 ffmpeg,
                 self.calibration_frame_path,
                 rtsp_transport=rtsp_transport,
@@ -351,7 +392,7 @@ class CaptureService:
             "width": width,
             "height": height,
             "grabbed_utc": datetime.now(UTC).isoformat(),
-            "source": redact(source.strip()),
+            "source": redact(source),
         }
 
     def solve_calibration(

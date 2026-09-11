@@ -116,7 +116,7 @@ kbd { font:12px ui-monospace,Consolas,monospace; background:var(--bg); border:1p
   <h2>2 &mdash; Grab a frame</h2>
   <div class="grid">
     <div class="wide">
-      <label for="source">Source (RTSP URL or video file)</label>
+      <label for="source">Source (RTSP URL or video file) <span id="savedHint" class="muted"></span></label>
       <input id="source" placeholder="rtsp://root:password@192.168.1.90/axis-media/media.amp"
              autocomplete="off" spellcheck="false">
     </div>
@@ -314,7 +314,7 @@ $("grab").addEventListener("click", async () => {
   try {
     const info = await api("/api/calibration/frame", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: $("source").value }),
+      body: JSON.stringify({ source: $("source").value, remember: true }),
     });
     imageSize = (info.width && info.height) ? [info.width, info.height] : null;
     shot.src = "/api/calibration/frame.jpg?t=" + Date.now();
@@ -369,6 +369,12 @@ $("solve").addEventListener("click", () => doSolve(false));
 $("save").addEventListener("click", () => doSolve(true));
 
 buildLayout();
+api("/api/status").then(s => {
+  if (s && s.saved_source) {
+    $("savedHint").textContent = "- saved: " + s.saved_source + " (leave empty to use it)";
+    $("source").placeholder = s.saved_source;
+  }
+}).catch(() => {});
 api("/api/calibration").then(r => {
   if (r && r.calibration) {
     $("result").innerHTML = `<div class="note ok">A saved calibration exists: residual ${r.calibration.residual_m.toFixed(3)} m, ${r.calibration.markers.length} markers, ${escapeHtml(r.calibration.created_utc.slice(0, 19))}Z. Solving again replaces it.</div>`;

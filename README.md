@@ -188,8 +188,25 @@ In VS Code, **F5** starts it and opens the browser automatically.
 
 Start and stop recordings, run the pre-flight check and read its verdict, watch
 frames / fps / dropped / segments / disk live, and index a finished session.
-The page polls once a second and remembers the camera URL locally, so it is not
-retyped every morning.
+The page polls once a second.
+
+**Live view.** A small MJPEG viewfinder (960 px, 8 fps by default) for aiming
+the camera and checking the strip is in frame. It is a separate, much smaller
+stream than the one being recorded, so it can run alongside a recording. The
+server stops its ffmpeg within ten seconds of the browser going away.
+
+**Remembering the camera.** Pass `--source` once (or tick *remember* in the UI)
+and the URL is written to `.env` as `CAMERA_URL`; from then on `--source` and
+the UI's source field can be left empty. `.env` is git-ignored because the URL
+carries the camera password. The browser never receives it — an empty source
+is filled in server-side, and every log, manifest and API response shows it
+redacted — so this stays safe even with `--host 0.0.0.0`.
+
+```powershell
+touchdown-analyzer probe --source rtsp://root:PASSWORD@192.168.200.189/axis-media/media.amp
+touchdown-analyzer probe          # same camera, from .env
+touchdown-analyzer record         # likewise
+```
 
 > **No login.** `--host 0.0.0.0` exposes the page to everyone on the network,
 > and the source field holds an RTSP URL with the camera password in it. Only do
@@ -348,6 +365,7 @@ src/touchdown_analyzer/
         recorder.py       ffmpeg segment recorder, watchdog, disk guard
         segments.py       segment index, instant -> (segment, frame)
         frames.py         frame-exact stills for calibration and the viewer
+        preview.py        MJPEG viewfinder relay
     calibration/
         homography.py     image plane -> ground plane, with degeneracy guards
     control/              browser UI; optional, needs the [ui] extra

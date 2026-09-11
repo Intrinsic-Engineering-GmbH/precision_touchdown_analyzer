@@ -13,18 +13,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from touchdown_analyzer import __version__
+from touchdown_analyzer.capture.preview import BOUNDARY
 from touchdown_analyzer.control.service import CaptureService, ServiceError
 
 STATIC = Path(__file__).parent / "static"
 
 
 class StartRequest(BaseModel):
-    source: str
+    source: str = ""  # empty = the saved camera URL
+    remember: bool = False
     session: str
     segment_seconds: int = Field(default=10, ge=1, le=600)
     target_fps: float = Field(default=60.0, gt=0, le=1000)
@@ -34,14 +36,16 @@ class StartRequest(BaseModel):
 
 
 class ProbeRequest(BaseModel):
-    source: str
+    source: str = ""
+    remember: bool = False
     seconds: float = Field(default=30.0, gt=0, le=600)
     target_fps: float = Field(default=60.0, gt=0, le=1000)
     rtsp_transport: str = Field(default="tcp", pattern="^(tcp|udp)$")
 
 
 class FrameRequest(BaseModel):
-    source: str
+    source: str = ""
+    remember: bool = False
     rtsp_transport: str = Field(default="tcp", pattern="^(tcp|udp)$")
 
 
@@ -111,6 +115,7 @@ def create_app(service: CaptureService) -> FastAPI:
                 rtsp_transport=request.rtsp_transport,
                 min_free_gb=request.min_free_gb,
                 duration_s=request.duration_s,
+                remember=request.remember,
             )
         except ServiceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -132,10 +137,30 @@ def create_app(service: CaptureService) -> FastAPI:
                 seconds=request.seconds,
                 target_fps=request.target_fps,
                 rtsp_transport=request.rtsp_transport,
+                remember=request.remember,
             )
         except ServiceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return job.as_dict()
+
+    @app.get("/api/preview.mjpeg", include_in_schema=False)
+    async def preview(
+        source: str = "",
+        fps: int = Query(default=8, ge=1, le=30),
+        width: int = Query(default=960, ge=160, le=1920),
+        rtsp_transport: str = Query(default="tcp", pattern="^(tcp|udp)$"),
+    ) -> StreamingResponse:
+        try:
+            stream = service.open_preview(
+                source, fps=fps, width=width, rtsp_transport=rtsp_transport
+            )
+        except ServiceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return StreamingResponse(
+            stream.frames(),
+            media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/calibration", include_in_schema=False)
     async def calibration_page() -> FileResponse:
@@ -145,7 +170,7 @@ def create_app(service: CaptureService) -> FastAPI:
     async def calibration_frame(request: FrameRequest) -> dict[str, Any]:
         try:
             return service.grab_calibration_frame(
-                request.source, rtsp_transport=request.rtsp_transport
+                request.source, rtsp_transport=request.rtsp_transport, remember=request.remember
             )
         except ServiceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

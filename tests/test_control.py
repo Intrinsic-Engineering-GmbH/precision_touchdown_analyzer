@@ -555,3 +555,19 @@ def test_annotation_rejects_a_negative_frame(client: TestClient) -> None:
         json={"session": "s", "segment": "a.mp4", "frame": -1, "image_x": 1.0, "image_y": 2.0},
     )
     assert response.status_code == 422
+
+
+def test_preview_route_reports_a_bad_source(client: TestClient, monkeypatch) -> None:
+    from touchdown_analyzer.capture import preview as preview_mod
+
+    def refuse(*a, **k):
+        raise preview_mod.PreviewError("no video arrived from the source")
+
+    monkeypatch.setattr(preview_mod, "open_preview", refuse)
+    response = client.get("/api/preview.mjpeg?source=rtsp://nowhere/x")
+    assert response.status_code == 409
+    assert "no video" in response.json()["detail"]
+
+
+def test_preview_route_without_any_source(client: TestClient) -> None:
+    assert client.get("/api/preview.mjpeg").status_code == 409

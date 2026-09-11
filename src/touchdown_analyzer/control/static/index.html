@@ -136,8 +136,12 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
   <h2>Camera</h2>
   <div class="grid">
     <div class="wide">
-      <label for="source">Source (RTSP URL or file)</label>
+      <label for="source">Source (RTSP URL or file) <span id="savedHint" class="muted"></span></label>
       <input id="source" placeholder="rtsp://root:password@192.168.1.90/axis-media/media.amp" autocomplete="off" spellcheck="false">
+      <label style="display:flex; align-items:center; gap:6px; margin-top:6px">
+        <input type="checkbox" id="remember" style="width:auto" checked>
+        <span class="muted">remember this URL on the server (.env) so it can be left empty next time</span>
+      </label>
     </div>
     <div>
       <label for="session">Session</label>
@@ -171,6 +175,20 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
     <span class="muted" id="hint"></span>
   </div>
   <div class="note" id="err" hidden></div>
+</section>
+
+<section class="panel">
+  <h2>Live view</h2>
+  <div class="row" style="margin-top:0">
+    <button id="previewBtn" class="ghost">Start preview</button>
+    <select id="previewFps" style="width:auto">
+      <option value="4">4 fps</option><option value="8" selected>8 fps</option><option value="15">15 fps</option>
+    </select>
+    <span class="muted" id="previewHint">A small, slow viewfinder for aiming the camera. Runs alongside a recording.</span>
+  </div>
+  <div id="previewBox" hidden style="margin-top:12px">
+    <img id="preview" alt="live preview" style="width:100%; display:block; border-radius:8px; background:#000; aspect-ratio:16/9">
+  </div>
 </section>
 
 <section class="panel">
@@ -243,6 +261,8 @@ function hms(seconds) {
 function renderStatus(s) {
   recording = s.recording;
   $("ver").textContent = "v" + s.version;
+  $("savedHint").textContent = s.saved_source ? "- saved: " + s.saved_source + " (leave empty to use it)" : "";
+  $("source").placeholder = s.saved_source || "rtsp://root:password@192.168.1.90/axis-media/media.amp";
   $("start").disabled = recording;
   $("stop").disabled = !recording;
   $("probeBtn").disabled = recording;
@@ -374,6 +394,7 @@ $("start").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         source: $("source").value,
+        remember: $("remember").checked,
         session: $("session").value,
         segment_seconds: Number($("segment").value),
         target_fps: Number($("fps").value),
@@ -400,6 +421,7 @@ $("probeBtn").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         source: $("source").value,
+        remember: $("remember").checked,
         seconds: 30,
         target_fps: Number($("fps").value),
         rtsp_transport: $("transport").value,
@@ -407,6 +429,37 @@ $("probeBtn").addEventListener("click", async () => {
     });
   } catch (e) { showError(e.message); }
 });
+
+// ---- live preview --------------------------------------------------------
+let previewing = false;
+function stopPreview() {
+  previewing = false;
+  $("preview").src = "";           // closes the multipart connection
+  $("previewBox").hidden = true;
+  $("previewBtn").textContent = "Start preview";
+}
+function startPreview() {
+  showError("");
+  const params = new URLSearchParams({
+    source: $("source").value, fps: $("previewFps").value,
+    rtsp_transport: $("transport").value, t: Date.now(),
+  });
+  const img = $("preview");
+  img.onerror = async () => {
+    if (!previewing) return;
+    // The <img> cannot show the server's reason; fetch it as JSON.
+    try { await api("/api/preview.mjpeg?" + params.toString()); }
+    catch (e) { showError("preview: " + e.message); }
+    stopPreview();
+  };
+  img.src = "/api/preview.mjpeg?" + params.toString();
+  $("previewBox").hidden = false;
+  $("previewBtn").textContent = "Stop preview";
+  previewing = true;
+}
+$("previewBtn").addEventListener("click", () => previewing ? stopPreview() : startPreview());
+$("previewFps").addEventListener("change", () => { if (previewing) startPreview(); });
+window.addEventListener("pagehide", stopPreview);
 
 let wasRecording = false;
 async function poll() {

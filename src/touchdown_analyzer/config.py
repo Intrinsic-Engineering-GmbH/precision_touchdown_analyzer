@@ -8,6 +8,7 @@ the heavy stack.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -66,3 +67,60 @@ class RecorderConfig:
 
     def with_tools(self, ffmpeg: str, ffprobe: str) -> RecorderConfig:
         return replace(self, ffmpeg=ffmpeg, ffprobe=ffprobe)
+
+
+# --------------------------------------------------------------------------
+# remembering the camera URL
+# --------------------------------------------------------------------------
+
+ENV_FILE = Path(".env")
+SOURCE_KEY = "CAMERA_URL"
+
+
+def saved_source(env_file: Path | None = None) -> str | None:
+    """The camera URL last used, or ``None``.
+
+    The environment wins over the file, so a shell can override it for one
+    run. The file is ``.env`` because the URL carries the camera password:
+    ``.env`` is git-ignored, ``config/`` is not.
+    """
+    env_file = env_file or ENV_FILE
+    value = os.environ.get(SOURCE_KEY, "").strip()
+    if value:
+        return value
+    if not env_file.is_file():
+        return None
+    try:
+        lines = env_file.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        key, _, raw = line.strip().partition("=")
+        if key.strip() == SOURCE_KEY:
+            value = raw.strip().strip("\"'")
+            return value or None
+    return None
+
+
+def remember_source(source: str, env_file: Path | None = None) -> Path:
+    """Write the camera URL to ``.env``, keeping every other line as it was."""
+    env_file = env_file or ENV_FILE
+    entry = f"{SOURCE_KEY}={source.strip()}"
+    lines: list[str] = []
+    if env_file.is_file():
+        lines = env_file.read_text(encoding="utf-8-sig").splitlines()
+
+    replaced = False
+    for index, line in enumerate(lines):
+        key = line.strip().partition("=")[0].strip()
+        if key == SOURCE_KEY or key == f"# {SOURCE_KEY}":
+            lines[index] = entry
+            replaced = True
+            break
+    if not replaced:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(entry)
+
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return env_file

@@ -16,12 +16,21 @@ from touchdown_analyzer.capture import ffmpeg as ff
 from touchdown_analyzer.capture import probe as probe_mod
 from touchdown_analyzer.capture import recorder as recorder_mod
 from touchdown_analyzer.capture import segments as segments_mod
-from touchdown_analyzer.config import TARGET_FPS, RecorderConfig
+from touchdown_analyzer.config import (
+    SOURCE_KEY,
+    TARGET_FPS,
+    RecorderConfig,
+    redact,
+    remember_source,
+    saved_source,
+)
 
 EXIT_OK = 0
 EXIT_TOOLING = 2
 EXIT_DISK = 3
 EXIT_CHECKS_FAILED = 4
+
+SOURCE_HELP = "RTSP URL or video file. Remembered in .env; omit it next time to reuse the last one"
 
 DEFAULT_ROOT = Path("data/raw")
 # Not 8000: Windows reserves it on many machines (http.sys / Hyper-V ranges),
@@ -46,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="pre-flight camera check",
         description="Record a short sample and verify the camera against docs/design.md 2.4.",
     )
-    check.add_argument("--source", required=True, help="RTSP URL or video file")
+    check.add_argument("--source", help=SOURCE_HELP)
     check.add_argument("--seconds", type=float, default=30.0, help="sample length (default: 30)")
     check.add_argument("--target-fps", type=float, default=TARGET_FPS)
     check.add_argument("--rtsp-transport", default="tcp", choices=["tcp", "udp"])
@@ -60,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="record continuously into fixed-length segments",
         description="Record until interrupted, restarting ffmpeg across failures.",
     )
-    rec.add_argument("--source", required=True, help="RTSP URL or video file")
+    rec.add_argument("--source", help=SOURCE_HELP)
     rec.add_argument("--session", default=date.today().isoformat(), help="session name")
     rec.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     rec.add_argument("--segment-seconds", type=int, default=10)
@@ -100,11 +109,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_source(given: str | None) -> str:
+    """The source on the command line, else the one saved in .env.
+
+    A URL given explicitly is saved for next time - the camera password is
+    the tedious part to retype, and .env is git-ignored for exactly this.
+    """
+    if given and given.strip():
+        source = given.strip()
+        if source != saved_source():
+            path = remember_source(source)
+            print(f"(remembered as {SOURCE_KEY} in {path}; omit --source next time)")
+        return source
+    saved = saved_source()
+    if saved:
+        print(f"using saved source {redact(saved)}")
+        return saved
+    raise SystemExit(
+        f"no --source given and no {SOURCE_KEY} saved yet. Pass --source once, "
+        "or add it to .env (see .env.example)."
+    )
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
+    args.source = resolve_source(args.source)
     ffmpeg = ff.find_tool("ffmpeg", args.ffmpeg)
     ffprobe = ff.find_tool("ffprobe", args.ffprobe)
 
-    print(f"Probing {args.source} for {args.seconds:.0f}s ...\n")
+    print(f"Probing {redact(args.source)} for {args.seconds:.0f}s ...\n")
     checks = probe_mod.run(
         args.source,
         ffmpeg,
@@ -120,7 +152,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 def cmd_record(args: argparse.Namespace) -> int:
     config = RecorderConfig(
-        source=args.source,
+        source=resolve_source(args.source),
         session=args.session,
         root=args.root,
         segment_seconds=args.segment_seconds,
