@@ -1,6 +1,67 @@
 {
   "version": "0.2.0",
+  "inputs": [
+    {
+      "id": "source",
+      "type": "promptString",
+      "description": "RTSP URL or video file",
+      "default": "rtsp://root@192.168.1.90/axis-media/media.amp"
+    },
+    {
+      "id": "session",
+      "type": "promptString",
+      "description": "Session name (folder under data/raw)",
+      "default": "2026-07-18"
+    }
+  ],
   "configurations": [
+    {
+      // First entry, so plain F5 starts this one. It waits for the CLI to
+      // print its URL and then opens the browser at it.
+      "name": "serve: capture control UI (F5)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "touchdown_analyzer",
+      "args": ["serve"],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}",
+      "serverReadyAction": {
+        "pattern": "Capture control on (https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    },
+    {
+      "name": "probe: pre-flight camera check",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "touchdown_analyzer",
+      "args": ["probe", "--source", "${input:source}"],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "record: continuous capture",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "touchdown_analyzer",
+      "args": ["record", "--source", "${input:source}", "--session", "${input:session}"],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "index: build the segment index",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "touchdown_analyzer",
+      "args": ["index", "--session", "${input:session}"],
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "cwd": "${workspaceFolder}"
+    },
     {
       "name": "Python: touchdown_analyzer CLI",
       "type": "debugpy",

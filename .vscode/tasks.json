@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pytest",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m pytest",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "ruff check",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m ruff check .",
+      "problemMatcher": []
+    },
+    {
+      "label": "ruff format",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m ruff format .",
+      "problemMatcher": []
+    },
+    {
+      "label": "mypy",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m mypy",
+      "problemMatcher": []
+    },
+    {
+      "label": "checks (pytest + ruff + mypy)",
+      "dependsOrder": "sequence",
+      "dependsOn": ["pytest", "ruff check", "mypy"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}

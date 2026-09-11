@@ -3,11 +3,17 @@
   "python.terminal.activateEnvironment": true,
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestArgs": ["tests"],
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
   "python.analysis.typeCheckingMode": "basic",
-  "python.analysis.extraPaths": ["${workspaceFolder}/src"],
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src"
+  ],
   "editor.formatOnSave": true,
-  "editor.rulers": [100],
+  "editor.rulers": [
+    100
+  ],
   "files.eol": "\n",
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
@@ -23,5 +29,6 @@
     "**/.ruff_cache": true,
     "**/.mypy_cache": true,
     "**/*.egg-info": true
-  }
+  },
+  "claudeCodeChat.permissions.yoloMode": false
 }

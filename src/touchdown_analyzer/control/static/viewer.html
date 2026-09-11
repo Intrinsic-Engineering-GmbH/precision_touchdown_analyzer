@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame viewer</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg:#f4f5f7; --panel:#fff; --ink:#14181f; --muted:#5d6672; --line:#d9dde3;
+  --accent:#1b5fbe; --ok:#127a4a; --warn:#9a6100; --fail:#b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#14171c; --panel:#1c2027; --ink:#e8ebef; --muted:#98a2b0; --line:#2c323b;
+          --accent:#5b9bf5; --ok:#4cc38a; --warn:#e0a01e; --fail:#f26d68; }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.wrap { max-width:1180px; margin:0 auto; padding:20px 16px 64px; }
+header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+h1 { font-size:19px; margin:0; }
+a { color:var(--accent); }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+         padding:16px; margin-bottom:16px; }
+.panel > h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+              color:var(--muted); margin:0 0 14px; }
+label { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+input,select { width:100%; padding:8px 10px; font:inherit; font-size:14px; color:var(--ink);
+               background:var(--bg); border:1px solid var(--line); border-radius:7px; }
+.grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); }
+.row { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+button { font:inherit; font-weight:550; font-size:14px; padding:9px 16px; border-radius:7px;
+         border:1px solid transparent; cursor:pointer; background:var(--accent); color:#fff; }
+button.ghost { background:transparent; border-color:var(--line); color:var(--ink); }
+button.step { min-width:56px; font-variant-numeric:tabular-nums; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.muted { color:var(--muted); font-size:13px; }
+
+#stage { position:relative; margin-top:12px; display:none; }
+#stage.ready { display:block; }
+#shot { width:100%; display:block; border-radius:8px; cursor:crosshair; background:#000; }
+#svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+#lens { position:absolute; width:190px; height:190px; border-radius:50%; border:2px solid var(--accent);
+        box-shadow:0 3px 14px rgba(0,0,0,.45); background-repeat:no-repeat; pointer-events:none;
+        display:none; z-index:5; }
+#lens.on { display:block; }
+#lens::after { content:""; position:absolute; inset:0; border-radius:50%;
+  background:linear-gradient(var(--accent),var(--accent)) 50% 50%/1px 100% no-repeat,
+             linear-gradient(var(--accent),var(--accent)) 50% 50%/100% 1px no-repeat; opacity:.9; }
+
+#scrub { width:100%; margin-top:10px; }
+.tiles { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); margin-top:12px; }
+.tile { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+.tile b { display:block; font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; }
+.tile span { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.tile.out b { color:var(--warn); }
+
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { text-align:left; padding:6px 8px 6px 0; border-bottom:1px solid var(--line); }
+th { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+.note { margin-top:12px; padding:10px 12px; border-radius:7px; font-size:13px; white-space:pre-wrap;
+        background:color-mix(in srgb,var(--fail) 12%,transparent); color:var(--fail);
+        border:1px solid color-mix(in srgb,var(--fail) 30%,transparent); }
+.note.ok { background:color-mix(in srgb,var(--ok) 12%,transparent); color:var(--ok);
+           border-color:color-mix(in srgb,var(--ok) 30%,transparent); }
+.note.warn { background:color-mix(in srgb,var(--warn) 12%,transparent); color:var(--warn);
+             border-color:color-mix(in srgb,var(--warn) 30%,transparent); }
+[hidden] { display:none !important; }
+kbd { font:12px ui-monospace,Consolas,monospace; background:var(--bg); border:1px solid var(--line);
+      border-radius:4px; padding:1px 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Frame viewer</h1>
+  <span class="muted">find the frame the wheel touched</span>
+  <span style="margin-left:auto"><a href="/">&larr; capture control</a> &nbsp; <a href="/calibration">calibration</a></span>
+</header>
+
+<section class="panel">
+  <h2>Session</h2>
+  <div class="grid">
+    <div>
+      <label for="session">Session</label>
+      <select id="session"></select>
+    </div>
+    <div>
+      <label for="segment">Segment</label>
+      <select id="segment"></select>
+    </div>
+  </div>
+  <div class="note" id="err" hidden></div>
+  <div id="calNote"></div>
+</section>
+
+<section class="panel">
+  <h2>Frame</h2>
+  <div class="row">
+    <button class="ghost step" data-d="-10">&minus;10</button>
+    <button class="ghost step" data-d="-1">&minus;1</button>
+    <button class="ghost step" data-d="1">+1</button>
+    <button class="ghost step" data-d="10">+10</button>
+    <span class="muted"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> step, hold <kbd>Shift</kbd> for 10</span>
+  </div>
+  <input type="range" id="scrub" min="0" max="0" value="0">
+
+  <div id="stage">
+    <img id="shot" alt="frame">
+    <svg id="svg" viewBox="0 0 1920 1080"></svg>
+    <div id="lens"></div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><b id="tFrame">&mdash;</b><span>frame</span></div>
+    <div class="tile"><b id="tTime">&mdash;</b><span>into segment</span></div>
+    <div class="tile"><b id="tUtc">&mdash;</b><span>utc</span></div>
+    <div class="tile" id="lonTile"><b id="tLon">&mdash;</b><span>longitudinal</span></div>
+    <div class="tile"><b id="tLat">&mdash;</b><span>lateral</span></div>
+  </div>
+  <p class="muted" id="hint">
+    Step to the first frame where the main wheel is on the ground, then click the
+    contact point. Use the magnifier &mdash; and click the wheel, never the fuselage:
+    a point 0.8 m up is wrong by metres through the same mapping.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Mark this touchdown</h2>
+  <div class="grid">
+    <div>
+      <label for="aircraft">Aircraft (optional)</label>
+      <input id="aircraft" placeholder="HB-3123" autocomplete="off">
+    </div>
+    <div>
+      <label for="note">Note (optional)</label>
+      <input id="note" placeholder="bounced, tail wheel first, ..." autocomplete="off">
+    </div>
+  </div>
+  <div class="row">
+    <button id="save" disabled>Save annotation</button>
+    <span class="muted" id="saveHint">Click the contact point first.</span>
+  </div>
+  <div id="saved"></div>
+  <table style="margin-top:14px">
+    <thead><tr>
+      <th>Aircraft</th><th>Segment</th><th class="num">Frame</th>
+      <th class="num">Longitudinal</th><th class="num">Lateral</th><th>Note</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="6" class="muted">No annotations yet.</td></tr></tbody>
+  </table>
+</section>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let state = null;       // last window response
+let contact = null;     // {x, y} in true image pixels
+let measurement = null;
+let busy = false;
+
+function escapeHtml(t) { const d = document.createElement("div"); d.textContent = t ?? ""; return d.innerHTML; }
+function showError(m) { $("err").hidden = !m; $("err").textContent = m || ""; }
+
+async function api(path, options) {
+  const r = await fetch(path, options);
+  let body = null;
+  try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((body && body.detail) || r.statusText);
+  return body;
+}
+
+async function loadSessions() {
+  let list = [];
+  try { list = await api("/api/sessions"); } catch (e) { showError(e.message); return; }
+  const usable = list.filter(s => s.segments > 0);
+  $("session").innerHTML = usable.length
+    ? usable.map(s => `<option value="${escapeHtml(s.session)}">${escapeHtml(s.session)} (${s.segments} segments)</option>`).join("")
+    : '<option value="">no recorded sessions</option>';
+  if (usable.length) await loadSegments();
+}
+
+async function loadSegments() {
+  const session = $("session").value;
+  if (!session) return;
+  showError("");
+  try {
+    const segs = await api(`/api/sessions/${encodeURIComponent(session)}/segments`);
+    $("segment").innerHTML = segs.map(s => {
+      const clock = s.start_utc ? s.start_utc.slice(11, 19) : s.name;
+      return `<option value="${escapeHtml(s.name)}">${clock} &middot; ${s.frames ?? "?"} frames</option>`;
+    }).join("");
+    await goto(0);
+    await loadAnnotations();
+  } catch (e) { showError(e.message); }
+}
+
+async function goto(frame) {
+  const session = $("session").value, segment = $("segment").value;
+  if (!session || !segment || busy) return;
+  busy = true;
+  try {
+    state = await api("/api/viewer/window", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session, segment, frame: Math.max(0, frame) }),
+    });
+    $("shot").src = `/api/viewer/frame/${state.frame}.jpg`;
+    $("stage").classList.add("ready");
+    $("scrub").max = Math.max(0, state.total_frames - 1);
+    $("scrub").value = state.frame;
+    $("tFrame").textContent = `${state.frame} / ${state.total_frames - 1}`;
+    $("tTime").textContent = state.offset_s.toFixed(3) + " s";
+    $("tUtc").textContent = state.utc.slice(11, 23);
+    showError("");
+  } catch (e) { showError(e.message); }
+  finally { busy = false; }
+}
+
+function step(delta) { if (state) goto(state.frame + delta); }
+
+for (const b of document.querySelectorAll("button.step")) {
+  b.addEventListener("click", () => step(+b.dataset.d));
+}
+$("scrub").addEventListener("input", () => goto(Number($("scrub").value)));
+$("session").addEventListener("change", loadSegments);
+$("segment").addEventListener("change", async () => { await goto(0); });
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); step(e.shiftKey ? -10 : -1); }
+  if (e.key === "ArrowRight") { e.preventDefault(); step(e.shiftKey ? 10 : 1); }
+});
+
+// ---- click the contact point --------------------------------------------
+const shot = $("shot"), lens = $("lens"), ZOOM = 5;
+
+shot.addEventListener("mousemove", ev => {
+  const rect = shot.getBoundingClientRect();
+  const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+  lens.classList.add("on");
+  lens.style.left = (x - 95) + "px";
+  lens.style.top = (y - 95 - 110) + "px";
+  lens.style.backgroundImage = `url(${shot.src})`;
+  lens.style.backgroundSize = `${rect.width * ZOOM}px ${rect.height * ZOOM}px`;
+  lens.style.backgroundPosition = `${-x * ZOOM + 95}px ${-y * ZOOM + 95}px`;
+});
+shot.addEventListener("mouseleave", () => lens.classList.remove("on"));
+
+shot.addEventListener("click", async ev => {
+  const rect = shot.getBoundingClientRect();
+  const natural = [shot.naturalWidth || 1920, shot.naturalHeight || 1080];
+  contact = {
+    x: (ev.clientX - rect.left) / rect.width * natural[0],
+    y: (ev.clientY - rect.top) / rect.height * natural[1],
+  };
+  $("svg").setAttribute("viewBox", `0 0 ${natural[0]} ${natural[1]}`);
+  drawMark(natural);
+
+  try {
+    const r = await api("/api/viewer/measure", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_x: contact.x, image_y: contact.y }),
+    });
+    measurement = r.measurement;
+  } catch (e) { measurement = null; }
+  renderMeasurement();
+});
+
+function drawMark(natural) {
+  const r = Math.max(natural[0], natural[1]) / 120;
+  $("svg").innerHTML = `
+    <circle cx="${contact.x}" cy="${contact.y}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="${r / 3}"/>
+    <line x1="${contact.x - r * 2}" y1="${contact.y}" x2="${contact.x + r * 2}" y2="${contact.y}" stroke="var(--accent)" stroke-width="${r / 4}"/>
+    <line x1="${contact.x}" y1="${contact.y - r * 2}" x2="${contact.x}" y2="${contact.y + r * 2}" stroke="var(--accent)" stroke-width="${r / 4}"/>`;
+}
+
+function renderMeasurement() {
+  $("save").disabled = !contact;
+  if (!measurement) {
+    $("tLon").textContent = "no calib";
+    $("tLat").textContent = "—";
+    $("lonTile").className = "tile";
+    $("saveHint").textContent = contact
+      ? "Saved without metres: calibrate first to get a displacement."
+      : "Click the contact point first.";
+    return;
+  }
+  const out = !measurement.in_range;
+  $("tLon").textContent = out
+    ? (measurement.world_x < 0 ? "< −19.4 m" : "> +19.4 m")
+    : measurement.world_x.toFixed(2) + " m";
+  $("tLat").textContent = measurement.world_y.toFixed(2) + " m";
+  $("lonTile").className = "tile" + (out ? " out" : "");
+  $("saveHint").textContent = out
+    ? "Outside the ±19.4 m window - saved as a bound, which is a legitimate result."
+    : "";
+}
+
+// ---- annotations ---------------------------------------------------------
+$("save").addEventListener("click", async () => {
+  if (!state || !contact) return;
+  try {
+    await api("/api/annotations", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session: state.session, segment: state.segment, frame: state.frame,
+        image_x: contact.x, image_y: contact.y,
+        aircraft: $("aircraft").value, note: $("note").value,
+      }),
+    });
+    $("saved").innerHTML = `<div class="note ok">Marked frame ${state.frame} of ${escapeHtml(state.segment)}.</div>`;
+    $("aircraft").value = ""; $("note").value = "";
+    await loadAnnotations();
+  } catch (e) {
+    $("saved").innerHTML = `<div class="note">${escapeHtml(e.message)}</div>`;
+  }
+});
+
+async function loadAnnotations() {
+  const session = $("session").value;
+  if (!session) return;
+  let list = [];
+  try { list = await api(`/api/annotations/${encodeURIComponent(session)}`); } catch (e) { return; }
+  $("rows").innerHTML = list.length
+    ? list.slice().reverse().map(a => `<tr>
+        <td>${escapeHtml(a.aircraft) || '<span class="muted">unassigned</span>'}</td>
+        <td class="muted">${escapeHtml((a.segment || "").slice(11, 19) || a.segment)}</td>
+        <td class="num">${a.frame}</td>
+        <td class="num">${a.world_x === undefined ? "&mdash;" : (a.in_range === false ? (a.world_x < 0 ? "&lt; &minus;19.4" : "&gt; +19.4") : a.world_x.toFixed(2)) + " m"}</td>
+        <td class="num">${a.world_y === undefined ? "&mdash;" : a.world_y.toFixed(2) + " m"}</td>
+        <td class="muted">${escapeHtml(a.note)}</td></tr>`).join("")
+    : '<tr><td colspan="6" class="muted">No annotations yet.</td></tr>';
+}
+
+api("/api/calibration").then(r => {
+  if (!r || !r.calibration) {
+    $("calNote").innerHTML = '<div class="note warn">No calibration saved. Frames still step, but clicks cannot be turned into metres. <a href="/calibration">Calibrate first</a>.</div>';
+  } else {
+    $("calNote").innerHTML = `<div class="note ok">Calibration loaded: residual ${r.calibration.residual_m.toFixed(3)} m.</div>`;
+  }
+}).catch(() => {});
+
+loadSessions();
+</script>
+</body>
+</html>

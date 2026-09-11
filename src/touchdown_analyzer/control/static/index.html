@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capture control</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --ink: #14181f;
+  --muted: #5d6672;
+  --line: #d9dde3;
+  --accent: #1b5fbe;
+  --ok: #127a4a;
+  --warn: #9a6100;
+  --fail: #b3261e;
+  --live: #127a4a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --panel: #1c2027;
+    --ink: #e8ebef;
+    --muted: #98a2b0;
+    --line: #2c323b;
+    --accent: #5b9bf5;
+    --ok: #4cc38a;
+    --warn: #e0a01e;
+    --fail: #f26d68;
+    --live: #4cc38a;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1040px; margin: 0 auto; padding: 20px 16px 64px; }
+header {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+.ver { color: var(--muted); font-size: 13px; }
+.dot {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--muted);
+}
+.dot i {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted); display: inline-block;
+}
+.dot.live i { background: var(--live); animation: pulse 1.6s infinite; }
+.dot.down i { background: var(--fail); }
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 16px; margin-bottom: 16px;
+}
+.panel > h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--muted); margin: 0 0 14px;
+}
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+input, select {
+  width: 100%; padding: 8px 10px; font: inherit; font-size: 14px;
+  color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.wide { grid-column: 1 / -1; }
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+button {
+  font: inherit; font-weight: 550; font-size: 14px; padding: 9px 18px;
+  border-radius: 7px; border: 1px solid transparent; cursor: pointer;
+  background: var(--accent); color: #fff;
+}
+button.ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+button.danger { background: var(--fail); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
+.tile { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.tile b {
+  display: block; font-size: 21px; font-weight: 600; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.tile span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.tile.bad b { color: var(--fail); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line); }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 550; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+
+.mark { font-weight: 600; font-size: 12px; letter-spacing: 0.04em; }
+.mark.pass { color: var(--ok); }
+.mark.warn { color: var(--warn); }
+.mark.fail { color: var(--fail); }
+.remedy { color: var(--muted); font-size: 13px; padding-bottom: 9px; }
+.muted { color: var(--muted); }
+.note {
+  margin-top: 12px; padding: 10px 12px; border-radius: 7px; font-size: 13px;
+  background: color-mix(in srgb, var(--fail) 12%, transparent);
+  color: var(--fail); border: 1px solid color-mix(in srgb, var(--fail) 30%, transparent);
+  white-space: pre-wrap;
+}
+.note.ok {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+}
+[hidden] { display: none !important; }
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Capture control</h1>
+  <span class="ver" id="ver"></span>
+  <a href="/calibration" style="color:var(--accent); font-size:13px">calibration</a>
+  <a href="/viewer" style="color:var(--accent); font-size:13px">frame viewer &rarr;</a>
+  <span class="dot" id="dot"><i></i><span id="dotText">connecting</span></span>
+</header>
+
+<section class="panel">
+  <h2>Camera</h2>
+  <div class="grid">
+    <div class="wide">
+      <label for="source">Source (RTSP URL or file)</label>
+      <input id="source" placeholder="rtsp://root:password@192.168.1.90/axis-media/media.amp" autocomplete="off" spellcheck="false">
+    </div>
+    <div>
+      <label for="session">Session</label>
+      <input id="session" autocomplete="off" spellcheck="false">
+    </div>
+    <div>
+      <label for="segment">Segment length (s)</label>
+      <input id="segment" type="number" min="1" max="600" value="10">
+    </div>
+    <div>
+      <label for="fps">Target fps</label>
+      <input id="fps" type="number" min="1" max="240" value="60">
+    </div>
+    <div>
+      <label for="transport">RTSP transport</label>
+      <select id="transport"><option value="tcp">tcp</option><option value="udp">udp</option></select>
+    </div>
+    <div>
+      <label for="minfree">Stop below (GB free)</label>
+      <input id="minfree" type="number" min="0" value="20">
+    </div>
+    <div>
+      <label for="duration">Duration (s, 0 = until stopped)</label>
+      <input id="duration" type="number" min="0" value="0">
+    </div>
+  </div>
+  <div class="row">
+    <button id="start">Start recording</button>
+    <button id="stop" class="danger" disabled>Stop</button>
+    <button id="probeBtn" class="ghost">Run pre-flight check</button>
+    <span class="muted" id="hint"></span>
+  </div>
+  <div class="note" id="err" hidden></div>
+</section>
+
+<section class="panel">
+  <h2>Live status</h2>
+  <div class="tiles">
+    <div class="tile"><b id="tElapsed">--</b><span>elapsed</span></div>
+    <div class="tile"><b id="tFrames">--</b><span>frames</span></div>
+    <div class="tile"><b id="tFps">--</b><span>fps</span></div>
+    <div class="tile" id="dropTile"><b id="tDrop">--</b><span>dropped</span></div>
+    <div class="tile"><b id="tSeg">--</b><span>segments</span></div>
+    <div class="tile"><b id="tWritten">--</b><span>written</span></div>
+    <div class="tile" id="gapTile"><b id="tGaps">--</b><span>gaps</span></div>
+    <div class="tile"><b id="tFree">--</b><span>disk free</span></div>
+  </div>
+  <div class="row"><span class="muted" id="recInfo">Not recording.</span></div>
+</section>
+
+<section class="panel" id="probePanel" hidden>
+  <h2>Pre-flight check</h2>
+  <div id="probeBody"></div>
+</section>
+
+<section class="panel">
+  <h2>Sessions</h2>
+  <table>
+    <thead><tr>
+      <th>Session</th><th class="num">Segments</th><th class="num">Size</th><th>Index</th><th></th>
+    </tr></thead>
+    <tbody id="sessions"><tr><td colspan="5" class="muted">None yet.</td></tr></tbody>
+  </table>
+  <div id="reportBox"></div>
+</section>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const FIELDS = ["source", "session", "segment", "fps", "transport", "minfree", "duration"];
+let recording = false;
+
+// Remember the RTSP URL and friends; retyping them in a field shed is no fun.
+for (const id of FIELDS) {
+  const saved = localStorage.getItem("tda." + id);
+  if (saved !== null) $(id).value = saved;
+  $(id).addEventListener("change", () => {
+    try { localStorage.setItem("tda." + id, $(id).value); } catch (e) { /* private mode */ }
+  });
+}
+if (!$("session").value) $("session").value = new Date().toISOString().slice(0, 10);
+
+function showError(message) {
+  const box = $("err");
+  box.hidden = !message;
+  box.textContent = message || "";
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  let payload = null;
+  try { payload = await response.json(); } catch (e) { /* empty body */ }
+  if (!response.ok) throw new Error((payload && payload.detail) || response.statusText);
+  return payload;
+}
+
+function hms(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  return [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
+    .map(v => String(v).padStart(2, "0")).join(":");
+}
+
+function renderStatus(s) {
+  recording = s.recording;
+  $("ver").textContent = "v" + s.version;
+  $("start").disabled = recording;
+  $("stop").disabled = !recording;
+  $("probeBtn").disabled = recording;
+  $("hint").textContent = recording ? "" : "Check the camera before a flying day.";
+
+  const dot = $("dot");
+  dot.className = "dot" + (recording ? " live" : "");
+  $("dotText").textContent = recording ? "recording" : "idle";
+
+  $("tElapsed").textContent = recording ? hms(s.elapsed_s) : "--";
+  $("tFrames").textContent = s.frames ? s.frames.toLocaleString() : "--";
+  $("tFps").textContent = s.fps ? s.fps.toFixed(1) : "--";
+  $("tDrop").textContent = s.frames ? s.drop_frames.toLocaleString() : "--";
+  $("tSeg").textContent = s.segments || "--";
+  $("tWritten").textContent = s.written_gb ? s.written_gb.toFixed(2) + " GB" : "--";
+  $("tGaps").textContent = s.gaps ? s.gaps + " (" + s.gap_seconds.toFixed(0) + "s)" : "0";
+  $("tFree").textContent = s.free_gb.toFixed(0) + " GB";
+
+  $("dropTile").className = "tile" + (s.drop_frames > 0 ? " bad" : "");
+  $("gapTile").className = "tile" + (s.gaps > 0 ? " bad" : "");
+
+  if (recording) {
+    $("recInfo").textContent =
+      "Recording " + s.session + " from " + s.source +
+      " into " + s.segment_seconds + "s segments" +
+      (s.restarts ? " - " + s.restarts + " restart(s)" : "") + ".";
+  } else if (s.session) {
+    $("recInfo").textContent = "Last session: " + s.session + ".";
+  }
+  if (s.error) showError(s.error);
+  renderProbe(s.probe);
+}
+
+function renderProbe(job) {
+  const panel = $("probePanel");
+  if (!job) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  if (job.running) {
+    $("probeBody").innerHTML = '<p class="muted">Sampling the stream, this takes a moment...</p>';
+    return;
+  }
+  if (job.error) {
+    $("probeBody").innerHTML = '<div class="note">' + escapeHtml(job.error) + "</div>";
+    return;
+  }
+
+  const rows = job.checks.map(c => {
+    const line = '<tr><td><span class="mark ' + c.status + '">' +
+      c.status.toUpperCase() + "</span></td><td>" + escapeHtml(c.name) +
+      "</td><td>" + escapeHtml(c.detail) + "</td></tr>";
+    return c.remedy
+      ? line + '<tr><td></td><td colspan="2" class="remedy">' + escapeHtml(c.remedy) + "</td></tr>"
+      : line;
+  }).join("");
+
+  const verdict = job.verdict === "fail"
+    ? '<div class="note">Do not record yet - fix the failures above.</div>'
+    : job.verdict === "warn"
+      ? '<div class="note ok">Usable, but see the warnings.</div>'
+      : '<div class="note ok">Camera is configured correctly.</div>';
+
+  $("probeBody").innerHTML = "<table><tbody>" + rows + "</tbody></table>" + verdict;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
+async function refreshSessions() {
+  let list = [];
+  try { list = await api("/api/sessions"); } catch (e) { return; }
+
+  const body = $("sessions");
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="5" class="muted">None yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(s =>
+    "<tr><td><code>" + escapeHtml(s.session) + "</code>" +
+    (s.recording ? ' <span class="mark pass">LIVE</span>' : "") +
+    '</td><td class="num">' + s.segments +
+    '</td><td class="num">' + s.size_gb.toFixed(2) + " GB</td><td>" +
+    (s.indexed ? "yes" : '<span class="muted">no</span>') +
+    '</td><td class="num"><button class="ghost" data-session="' +
+    escapeHtml(s.session) + '"' + (s.recording ? " disabled" : "") +
+    ">Index</button></td></tr>"
+  ).join("");
+
+  for (const button of body.querySelectorAll("button[data-session]")) {
+    button.addEventListener("click", () => indexSession(button.dataset.session, button));
+  }
+}
+
+async function indexSession(session, button) {
+  button.disabled = true;
+  button.textContent = "Indexing...";
+  showError("");
+  try {
+    const r = await api("/api/sessions/" + encodeURIComponent(session));
+    const problems = [];
+    if (r.gaps.length) problems.push(r.gaps.length + " gap(s), " +
+      r.gaps.reduce((a, g) => a + g.seconds, 0).toFixed(1) + "s missing");
+    if (r.overlaps.length) problems.push(r.overlaps.length + " clock overlap(s)");
+    if (r.fps_outliers.length) problems.push(r.fps_outliers.length + " segment(s) off target fps");
+
+    $("reportBox").innerHTML =
+      '<div class="note ' + (problems.length ? "" : "ok") + '">' +
+      escapeHtml(session) + ": " + r.segments + " segments, " +
+      (r.recorded_s / 60).toFixed(1) + " min, " +
+      (r.coverage * 100).toFixed(1) + "% coverage" +
+      (problems.length ? "\n" + problems.join("\n") : "") + "</div>";
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Index";
+    refreshSessions();
+  }
+}
+
+$("start").addEventListener("click", async () => {
+  showError("");
+  try {
+    await api("/api/record/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: $("source").value,
+        session: $("session").value,
+        segment_seconds: Number($("segment").value),
+        target_fps: Number($("fps").value),
+        rtsp_transport: $("transport").value,
+        min_free_gb: Number($("minfree").value),
+        duration_s: Number($("duration").value),
+      }),
+    });
+    refreshSessions();
+  } catch (e) { showError(e.message); }
+});
+
+$("stop").addEventListener("click", async () => {
+  showError("");
+  try { await api("/api/record/stop", { method: "POST" }); }
+  catch (e) { showError(e.message); }
+});
+
+$("probeBtn").addEventListener("click", async () => {
+  showError("");
+  try {
+    await api("/api/probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: $("source").value,
+        seconds: 30,
+        target_fps: Number($("fps").value),
+        rtsp_transport: $("transport").value,
+      }),
+    });
+  } catch (e) { showError(e.message); }
+});
+
+let wasRecording = false;
+async function poll() {
+  try {
+    const s = await api("/api/status");
+    renderStatus(s);
+    $("dot").classList.remove("down");
+    if (wasRecording !== s.recording) { wasRecording = s.recording; refreshSessions(); }
+  } catch (e) {
+    $("dot").className = "dot down";
+    $("dotText").textContent = "server unreachable";
+  }
+}
+
+poll();
+refreshSessions();
+setInterval(poll, 1000);
+setInterval(refreshSessions, 15000);
+</script>
+</body>
+</html>

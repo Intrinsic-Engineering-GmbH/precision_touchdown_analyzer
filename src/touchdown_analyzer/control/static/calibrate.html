@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calibration</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg:#f4f5f7; --panel:#fff; --ink:#14181f; --muted:#5d6672; --line:#d9dde3;
+  --accent:#1b5fbe; --ok:#127a4a; --warn:#9a6100; --fail:#b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#14171c; --panel:#1c2027; --ink:#e8ebef; --muted:#98a2b0; --line:#2c323b;
+    --accent:#5b9bf5; --ok:#4cc38a; --warn:#e0a01e; --fail:#f26d68;
+  }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.wrap { max-width:1180px; margin:0 auto; padding:20px 16px 64px; }
+header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+h1 { font-size:19px; margin:0; }
+a { color:var(--accent); }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+         padding:16px; margin-bottom:16px; }
+.panel > h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+              color:var(--muted); margin:0 0 14px; }
+label { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+input { width:100%; padding:8px 10px; font:inherit; font-size:14px; color:var(--ink);
+        background:var(--bg); border:1px solid var(--line); border-radius:7px; }
+.grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+.wide { grid-column:1/-1; }
+.row { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+button { font:inherit; font-weight:550; font-size:14px; padding:9px 18px; border-radius:7px;
+         border:1px solid transparent; cursor:pointer; background:var(--accent); color:#fff; }
+button.ghost { background:transparent; border-color:var(--line); color:var(--ink); }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.muted { color:var(--muted); font-size:13px; }
+
+/* image + magnifier */
+#stage { position:relative; display:none; margin-top:12px; }
+#stage.ready { display:block; }
+#shot { width:100%; display:block; border-radius:8px; cursor:crosshair; }
+#svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+#lens {
+  position:absolute; width:190px; height:190px; border-radius:50%;
+  border:2px solid var(--accent); box-shadow:0 3px 14px rgba(0,0,0,.45);
+  background-repeat:no-repeat; pointer-events:none; display:none; z-index:5;
+}
+#lens.on { display:block; }
+#lens::after {
+  content:""; position:absolute; inset:0; border-radius:50%;
+  background:
+    linear-gradient(var(--accent),var(--accent)) 50% 50%/1px 100% no-repeat,
+    linear-gradient(var(--accent),var(--accent)) 50% 50%/100% 1px no-repeat;
+  opacity:.9;
+}
+
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { text-align:left; padding:6px 8px 6px 0; border-bottom:1px solid var(--line); }
+th { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
+td input { padding:5px 7px; font-size:13px; }
+tr.active td { background:color-mix(in srgb, var(--accent) 12%, transparent); }
+tr.unset td:first-child { color:var(--muted); }
+.note { margin-top:12px; padding:10px 12px; border-radius:7px; font-size:13px; white-space:pre-wrap;
+        background:color-mix(in srgb,var(--fail) 12%,transparent); color:var(--fail);
+        border:1px solid color-mix(in srgb,var(--fail) 30%,transparent); }
+.note.ok { background:color-mix(in srgb,var(--ok) 12%,transparent); color:var(--ok);
+           border-color:color-mix(in srgb,var(--ok) 30%,transparent); }
+.note.warn { background:color-mix(in srgb,var(--warn) 12%,transparent); color:var(--warn);
+             border-color:color-mix(in srgb,var(--warn) 30%,transparent); }
+[hidden] { display:none !important; }
+kbd { font:12px ui-monospace,Consolas,monospace; background:var(--bg); border:1px solid var(--line);
+      border-radius:4px; padding:1px 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Calibration</h1>
+  <span class="muted">image plane &rarr; ground plane</span>
+  <span style="margin-left:auto"><a href="/">&larr; capture control</a></span>
+</header>
+
+<section class="panel">
+  <h2>1 &mdash; Marker layout on the ground</h2>
+  <p class="muted" style="margin-top:0">
+    Three pairs, one on each edge of the strip. Markers along the strip axis alone
+    are collinear and cannot define a homography &mdash; the lateral spread is what
+    makes the fit solvable.
+  </p>
+  <div class="grid">
+    <div>
+      <label for="halfLen">Distance along the strip (m)</label>
+      <input id="halfLen" type="number" step="0.01" value="15">
+    </div>
+    <div>
+      <label for="halfWid">Half strip width (m)</label>
+      <input id="halfWid" type="number" step="0.01" value="10">
+    </div>
+    <div style="display:flex; align-items:flex-end">
+      <button class="ghost" id="applyLayout">Apply to table</button>
+    </div>
+  </div>
+  <p class="muted">
+    These fill the table below. Overwrite any row with what you actually
+    tape-measured &mdash; the survey does not have to be perfectly symmetric.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>2 &mdash; Grab a frame</h2>
+  <div class="grid">
+    <div class="wide">
+      <label for="source">Source (RTSP URL or video file)</label>
+      <input id="source" placeholder="rtsp://root:password@192.168.1.90/axis-media/media.amp"
+             autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+  <div class="row">
+    <button id="grab">Grab frame</button>
+    <span class="muted" id="frameInfo"></span>
+  </div>
+  <div class="note" id="err" hidden></div>
+
+  <div id="stage">
+    <img id="shot" alt="calibration frame">
+    <svg id="svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    <div id="lens"></div>
+  </div>
+  <p class="muted" id="clickHint" hidden>
+    Click the marker highlighted in the table. The magnifier follows the cursor &mdash;
+    use it, clicking 1 px off costs about 0.1 m. <kbd>Esc</kbd> deselects.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>3 &mdash; Markers</h2>
+  <table>
+    <thead><tr>
+      <th>Marker</th><th class="num">x along (m)</th><th class="num">y lateral (m)</th>
+      <th class="num">image x</th><th class="num">image y</th><th class="num">error</th><th></th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="row">
+    <button id="solve">Solve</button>
+    <button class="ghost" id="save" disabled>Save calibration</button>
+    <button class="ghost" id="clear">Clear clicks</button>
+    <label style="display:flex; align-items:center; gap:6px; margin:0">
+      <input type="checkbox" id="showGrid" style="width:auto" checked>
+      <span class="muted">overlay grid</span>
+    </label>
+  </div>
+  <div id="result"></div>
+</section>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let markers = [];        // {label, world_x, world_y, image_x, image_y, error}
+let active = -1;         // row awaiting a click
+let imageSize = null;    // [w, h] of the grabbed frame
+let solved = null;
+
+const saved = key => { try { return localStorage.getItem(key); } catch (e) { return null; } };
+const remember = (key, v) => { try { localStorage.setItem(key, v); } catch (e) {} };
+
+$("source").value = saved("tda.source") || "";
+$("source").addEventListener("change", () => remember("tda.source", $("source").value));
+$("halfLen").value = saved("tda.halfLen") || "15";
+$("halfWid").value = saved("tda.halfWid") || "10";
+
+function escapeHtml(t) { const d = document.createElement("div"); d.textContent = t ?? ""; return d.innerHTML; }
+function showError(msg) { $("err").hidden = !msg; $("err").textContent = msg || ""; }
+
+async function api(path, options) {
+  const r = await fetch(path, options);
+  let body = null;
+  try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((body && body.detail) || r.statusText);
+  return body;
+}
+
+function buildLayout() {
+  const L = Number($("halfLen").value), W = Number($("halfWid").value);
+  remember("tda.halfLen", L); remember("tda.halfWid", W);
+  markers = [];
+  for (const [x, name] of [[-L, "short"], [0, "target"], [L, "long"]]) {
+    for (const [s, side] of [[1, "far"], [-1, "near"]]) {
+      markers.push({ label: `${name} ${side}`, world_x: x, world_y: s * W,
+                     image_x: null, image_y: null, error: null });
+    }
+  }
+  active = 0; solved = null; $("save").disabled = true; $("result").innerHTML = "";
+  renderRows(); drawOverlay();
+}
+
+function renderRows() {
+  $("rows").innerHTML = markers.map((m, i) => {
+    const set = m.image_x !== null;
+    return `<tr class="${i === active ? "active" : ""} ${set ? "" : "unset"}">
+      <td>${escapeHtml(m.label)}</td>
+      <td class="num"><input type="number" step="0.01" data-f="world_x" data-i="${i}" value="${m.world_x}"></td>
+      <td class="num"><input type="number" step="0.01" data-f="world_y" data-i="${i}" value="${m.world_y}"></td>
+      <td class="num">${set ? m.image_x.toFixed(1) : "&mdash;"}</td>
+      <td class="num">${set ? m.image_y.toFixed(1) : "&mdash;"}</td>
+      <td class="num">${m.error === null ? "" : m.error.toFixed(3) + " m"}</td>
+      <td class="num"><button class="ghost" data-pick="${i}">${set ? "re-click" : "click"}</button></td>
+    </tr>`;
+  }).join("");
+
+  for (const input of $("rows").querySelectorAll("input[data-f]")) {
+    input.addEventListener("change", () => {
+      markers[+input.dataset.i][input.dataset.f] = Number(input.value);
+      drawOverlay();
+    });
+  }
+  for (const b of $("rows").querySelectorAll("button[data-pick]")) {
+    b.addEventListener("click", () => { active = +b.dataset.pick; renderRows(); drawOverlay(); });
+  }
+}
+
+function drawOverlay() {
+  if (!imageSize) return;
+  const [w, h] = imageSize;
+  const svg = $("svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  const r = Math.max(w, h) / 190;
+
+  let out = "";
+  markers.forEach((m, i) => {
+    if (m.image_x === null) return;
+    const colour = i === active ? "var(--accent)" : (m.error !== null && m.error > 0.1 ? "var(--fail)" : "var(--ok)");
+    out += `<circle cx="${m.image_x}" cy="${m.image_y}" r="${r}" fill="none" stroke="${colour}" stroke-width="${r / 3}"/>
+            <line x1="${m.image_x - r * 1.8}" y1="${m.image_y}" x2="${m.image_x + r * 1.8}" y2="${m.image_y}" stroke="${colour}" stroke-width="${r / 4}"/>
+            <line x1="${m.image_x}" y1="${m.image_y - r * 1.8}" x2="${m.image_x}" y2="${m.image_y + r * 1.8}" stroke="${colour}" stroke-width="${r / 4}"/>
+            <text x="${m.image_x + r * 2}" y="${m.image_y - r * 1.2}" fill="${colour}" font-size="${r * 2.4}">${escapeHtml(m.label)}</text>`;
+  });
+
+  if (solved && $("showGrid").checked) out += gridPath(r);
+  svg.innerHTML = out;
+}
+
+function toImage(H, X, Y) {
+  const d = H[2][0] * X + H[2][1] * Y + H[2][2];
+  return [(H[0][0] * X + H[0][1] * Y + H[0][2]) / d, (H[1][0] * X + H[1][1] * Y + H[1][2]) / d];
+}
+
+function gridPath(r) {
+  // Draw the solved ground grid back onto the image. If it lands on the real
+  // strip edges and target line, the calibration is right.
+  const H = solved.inverse, W = Number($("halfWid").value), L = Number($("halfLen").value);
+  let out = "";
+  const line = (a, b, colour, width) =>
+    `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${colour}" stroke-width="${width}" stroke-opacity="0.75"/>`;
+
+  for (let x = -L; x <= L + 0.001; x += 5) {
+    const strong = Math.abs(x) < 0.001;
+    out += line(toImage(H, x, -W), toImage(H, x, W),
+                strong ? "var(--accent)" : "var(--muted)", strong ? r / 2 : r / 5);
+  }
+  for (const y of [-W, 0, W]) {
+    out += line(toImage(H, -L, y), toImage(H, L, y), "var(--muted)", r / 5);
+  }
+  return out;
+}
+
+// ---- magnifier -----------------------------------------------------------
+const shot = $("shot"), lens = $("lens"), ZOOM = 5;
+
+function lensMove(ev) {
+  if (active < 0 || !imageSize) { lens.classList.remove("on"); return; }
+  const rect = shot.getBoundingClientRect();
+  const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+  if (x < 0 || y < 0 || x > rect.width || y > rect.height) { lens.classList.remove("on"); return; }
+
+  lens.classList.add("on");
+  lens.style.left = (x - 95) + "px";
+  lens.style.top = (y - 95 - 110) + "px";   // sit above the cursor, not under it
+  lens.style.backgroundImage = `url(${shot.src})`;
+  lens.style.backgroundSize = `${rect.width * ZOOM}px ${rect.height * ZOOM}px`;
+  lens.style.backgroundPosition = `${-x * ZOOM + 95}px ${-y * ZOOM + 95}px`;
+}
+
+shot.addEventListener("mousemove", lensMove);
+shot.addEventListener("mouseleave", () => lens.classList.remove("on"));
+shot.addEventListener("click", ev => {
+  if (active < 0 || !imageSize) return;
+  const rect = shot.getBoundingClientRect();
+  // Displayed size differs from the real frame; scale back to true pixels.
+  markers[active].image_x = (ev.clientX - rect.left) / rect.width * imageSize[0];
+  markers[active].image_y = (ev.clientY - rect.top) / rect.height * imageSize[1];
+  markers[active].error = null;
+  const next = markers.findIndex((m, i) => i > active && m.image_x === null);
+  active = next >= 0 ? next : -1;
+  renderRows(); drawOverlay();
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { active = -1; lens.classList.remove("on"); renderRows(); drawOverlay(); }
+});
+
+// ---- actions -------------------------------------------------------------
+$("applyLayout").addEventListener("click", buildLayout);
+$("showGrid").addEventListener("change", drawOverlay);
+
+$("grab").addEventListener("click", async () => {
+  showError("");
+  $("grab").disabled = true; $("grab").textContent = "Grabbing...";
+  try {
+    const info = await api("/api/calibration/frame", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: $("source").value }),
+    });
+    imageSize = (info.width && info.height) ? [info.width, info.height] : null;
+    shot.src = "/api/calibration/frame.jpg?t=" + Date.now();
+    $("stage").classList.add("ready");
+    $("clickHint").hidden = false;
+    $("frameInfo").textContent = imageSize ? `${imageSize[0]}x${imageSize[1]}` : "size unknown";
+    if (!markers.length) buildLayout(); else { renderRows(); drawOverlay(); }
+  } catch (e) { showError(e.message); }
+  finally { $("grab").disabled = false; $("grab").textContent = "Grab frame"; }
+});
+
+$("clear").addEventListener("click", () => {
+  markers.forEach(m => { m.image_x = m.image_y = m.error = null; });
+  solved = null; active = 0; $("save").disabled = true; $("result").innerHTML = "";
+  renderRows(); drawOverlay();
+});
+
+async function doSolve(save) {
+  showError("");
+  const placed = markers.filter(m => m.image_x !== null);
+  if (placed.length < 4) {
+    $("result").innerHTML = `<div class="note">${placed.length} marker(s) clicked. At least 4 are needed, on both edges of the strip.</div>`;
+    return;
+  }
+  try {
+    const r = await api("/api/calibration/solve", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        markers: placed.map(m => ({ image_x: m.image_x, image_y: m.image_y,
+                                    world_x: m.world_x, world_y: m.world_y, label: m.label })),
+        image_size: imageSize, source: $("source").value, save,
+      }),
+    });
+    solved = r;
+    let k = 0;
+    markers.forEach(m => { if (m.image_x !== null) m.error = r.per_marker_m[k++]; });
+
+    const cls = r.acceptable ? "ok" : "warn";
+    const verdict = r.acceptable
+      ? `Residual ${r.residual_m.toFixed(3)} m &mdash; within the ${r.target_residual_m} m target for M1.`
+      : `Residual ${r.residual_m.toFixed(3)} m &mdash; above the ${r.target_residual_m} m target. Worst marker ${r.worst_m.toFixed(3)} m: re-click it with the magnifier, or check its tape measurement.`;
+    $("result").innerHTML = `<div class="note ${cls}">${verdict}${r.saved_to ? "\nSaved to " + escapeHtml(r.saved_to) : ""}</div>`;
+    $("save").disabled = false;
+    renderRows(); drawOverlay();
+  } catch (e) {
+    solved = null; $("save").disabled = true;
+    $("result").innerHTML = `<div class="note">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+$("solve").addEventListener("click", () => doSolve(false));
+$("save").addEventListener("click", () => doSolve(true));
+
+buildLayout();
+api("/api/calibration").then(r => {
+  if (r && r.calibration) {
+    $("result").innerHTML = `<div class="note ok">A saved calibration exists: residual ${r.calibration.residual_m.toFixed(3)} m, ${r.calibration.markers.length} markers, ${escapeHtml(r.calibration.created_utc.slice(0, 19))}Z. Solving again replaces it.</div>`;
+  }
+}).catch(() => {});
+</script>
+</body>
+</html>
