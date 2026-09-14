@@ -4,7 +4,7 @@ Used by the setup program (``packaging/windows/setup_wizard.py``) to put
 the bundle in place, and by the installed program (``--uninstall``) to take
 it away again. Per-user - under ``%LOCALAPPDATA%\\Programs`` - so no
 administrator rights are needed and Add/Remove Programs still lists it.
-Recordings and results live in ``%LOCALAPPDATA%\\PrecisionTouchdownAnalyzer``
+Recordings and results live in ``%LOCALAPPDATA%\\PTA``
 and are left alone by the uninstaller.
 """
 
@@ -29,7 +29,7 @@ REGISTRY_KEY = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{paths.APP
 
 def default_install_dir() -> Path:
     base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-    return base / "Programs" / paths.APP_TITLE
+    return base / "Programs" / paths.APP_NAME
 
 
 def start_menu_dir() -> Path:
@@ -163,7 +163,7 @@ def uninstall(install_dir: Path | None = None, *, keep_data: bool = True) -> Non
 
 
 def uninstall_interactive(silent: bool) -> int:
-    """What ``PrecisionTouchdownAnalyzer.exe --uninstall`` does."""
+    """What ``PTA.exe --uninstall`` does."""
     if not silent:
         import tkinter as tk
         from tkinter import messagebox

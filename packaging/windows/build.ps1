@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Build the Windows installer: dist\PrecisionTouchdownAnalyzer-Setup-<version>.exe
+  Build the Windows installer: dist\PTA-Setup-<version>.exe
 
 .DESCRIPTION
   Run from the repository root, inside the project's virtual environment
@@ -30,7 +30,7 @@ if (Test-Path build\dist) { Remove-Item build\dist -Recurse -Force }
 & $python -m PyInstaller packaging\windows\app.spec --noconfirm --distpath build\dist --workpath build\work --log-level WARN
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller (app) failed" }
 
-$app = "build\dist\PrecisionTouchdownAnalyzer"
+$app = "build\dist\PTA"
 Copy-Item packaging\out\icon.ico "$app\icon.ico" -Force
 Copy-Item packaging\out\icon.png "$app\icon.png" -Force
 Copy-Item LICENSE "$app\LICENSE.txt" -Force
@@ -51,6 +51,6 @@ New-Item -ItemType Directory -Force dist | Out-Null
 & $python -m PyInstaller packaging\windows\setup.spec --noconfirm --distpath dist --workpath build\work-setup --log-level WARN
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller (setup) failed" }
 
-Get-ChildItem dist\PrecisionTouchdownAnalyzer-Setup-*.exe | ForEach-Object {
+Get-ChildItem dist\PTA-Setup-*.exe | ForEach-Object {
   Write-Host ("== done: {0}  ({1:N1} MB)" -f $_.FullName, ($_.Length / 1MB))
 }

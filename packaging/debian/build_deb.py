@@ -1,4 +1,4 @@
-"""Build precision-touchdown-analyzer_<version>_amd64.deb - from any OS.
+"""Build pta_<version>_amd64.deb - from any OS.
 
 A .deb is an ``ar`` archive of ``debian-binary``, ``control.tar.gz`` and
 ``data.tar.gz``; both are written here with the standard library, so the
@@ -8,11 +8,11 @@ Only *installing* it needs a Debian or Ubuntu box.
 What the package does on that box (see the maintainer scripts below):
 
 * ships the project wheel and every dependency wheel for Python 3.12 and
-  3.13 (Ubuntu 24.04 / Debian 13) under /opt/precision-touchdown-analyzer/wheels
+  3.13 (Ubuntu 24.04 / Debian 13) under /opt/pta/wheels
 * postinst creates a virtual environment from the system python3 and
   installs those wheels offline - no PyPI access needed at the field
-* installs a systemd unit (touchdown-analyzer.service, disabled by default)
-  that serves on 0.0.0.0:8080 with data under /var/lib/precision-touchdown-analyzer,
+* installs a systemd unit (pta.service, disabled by default)
+  that serves on 0.0.0.0:8080 with data under /var/lib/pta,
   and a desktop entry for the control window
 * depends on ffmpeg, python3 (>= 3.12), python3-venv, python3-tk
 
@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from touchdown_analyzer import __version__  # noqa: E402
 
-PACKAGE = "precision-touchdown-analyzer"
+PACKAGE = "pta"
 PREFIX = f"/opt/{PACKAGE}"
 DATA_DIR = f"/var/lib/{PACKAGE}"
 PYTHONS = ("3.12", "3.13")
@@ -60,8 +60,8 @@ Description: Precision Touchdown Analyzer - glider spot-landing measurement
  automatic touchdown detection with an overlay image and a clip per landing,
  OGN identification, a judge's review page and club scoring rules.
  .
- The web server runs as the touchdown-analyzer systemd service (disabled by
- default; enable it with systemctl enable --now touchdown-analyzer) or from
+ The web server runs as the pta systemd service (disabled by
+ default; enable it with systemctl enable --now pta) or from
  the "Precision Touchdown Analyzer" desktop entry.
 """
 
@@ -72,11 +72,11 @@ DATA="{DATA_DIR}"
 
 case "$1" in
   configure)
-    if ! getent passwd touchdown-analyzer >/dev/null; then
-      adduser --system --group --home "$DATA" --no-create-home --quiet touchdown-analyzer
+    if ! getent passwd pta >/dev/null; then
+      adduser --system --group --home "$DATA" --no-create-home --quiet pta
     fi
     mkdir -p "$DATA/config" "$DATA/data" "$DATA/logs"
-    chown -R touchdown-analyzer:touchdown-analyzer "$DATA"
+    chown -R pta:pta "$DATA"
     chmod 2775 "$DATA" "$DATA/config" "$DATA/data" "$DATA/logs"
 
     # A virtual environment from the system python, filled from the wheels
@@ -86,14 +86,15 @@ case "$1" in
     fi
     "$PREFIX/venv/bin/python" -m pip install --quiet --no-index --find-links "$PREFIX/wheels" \\
         --upgrade "touchdown_analyzer[ui,analysis]" \\
-      || {{ echo "precision-touchdown-analyzer: offline wheel install failed (python $(python3 --version 2>&1)); trying PyPI" >&2;
+      || {{ echo "pta: offline wheel install failed (python $(python3 --version 2>&1)); trying PyPI" >&2;
            "$PREFIX/venv/bin/python" -m pip install --quiet --find-links "$PREFIX/wheels" --upgrade "touchdown_analyzer[ui,analysis]"; }}
     ln -sf "$PREFIX/venv/bin/touchdown-analyzer" /usr/bin/touchdown-analyzer
     ln -sf "$PREFIX/venv/bin/touchdown-analyzer-launcher" /usr/bin/touchdown-analyzer-launcher
+    ln -sf "$PREFIX/venv/bin/touchdown-analyzer-launcher" /usr/bin/pta
 
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload || true
-      echo "Precision Touchdown Analyzer installed. Web server: systemctl enable --now touchdown-analyzer"
+      echo "Precision Touchdown Analyzer installed. Web server: systemctl enable --now pta"
       echo "(then http://<this machine>:8080). Data under $DATA."
     fi
     if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q || true; fi
@@ -105,8 +106,8 @@ exit 0
 PRERM = """#!/bin/sh
 set -e
 if [ "$1" = "remove" ] && command -v systemctl >/dev/null 2>&1; then
-  systemctl stop touchdown-analyzer 2>/dev/null || true
-  systemctl disable touchdown-analyzer 2>/dev/null || true
+  systemctl stop pta 2>/dev/null || true
+  systemctl disable pta 2>/dev/null || true
 fi
 exit 0
 """
@@ -115,13 +116,13 @@ POSTRM = f"""#!/bin/sh
 set -e
 case "$1" in
   remove)
-    rm -f /usr/bin/touchdown-analyzer /usr/bin/touchdown-analyzer-launcher
+    rm -f /usr/bin/touchdown-analyzer /usr/bin/touchdown-analyzer-launcher /usr/bin/pta
     rm -rf "{PREFIX}/venv"
     if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload || true; fi
     ;;
   purge)
     rm -rf "{PREFIX}" "{DATA_DIR}"
-    if getent passwd touchdown-analyzer >/dev/null; then deluser --system --quiet touchdown-analyzer || true; fi
+    if getent passwd pta >/dev/null; then deluser --system --quiet pta || true; fi
     ;;
 esac
 exit 0
@@ -134,8 +135,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=touchdown-analyzer
-Group=touchdown-analyzer
+User=pta
+Group=pta
 WorkingDirectory={DATA_DIR}
 Environment=TOUCHDOWN_ANALYZER_HOME={DATA_DIR}
 ExecStart={PREFIX}/venv/bin/touchdown-analyzer serve --host 0.0.0.0 --port 8080 --root {DATA_DIR}/data/raw
@@ -150,7 +151,7 @@ DESKTOP = f"""[Desktop Entry]
 Type=Application
 Name=Precision Touchdown Analyzer
 Comment=Glider spot-landing measurement - control window
-Exec=/usr/bin/touchdown-analyzer-launcher
+Exec=/usr/bin/pta
 Icon={PACKAGE}
 Terminal=false
 Categories=AudioVideo;Video;Science;
@@ -160,7 +161,7 @@ COPYRIGHT = """Format: https://www.debian.org/doc/packaging-manuals/copyright-fo
 Upstream-Name: touchdown_analyzer
 Files: *
 Copyright: 2026 Intrinsic Engineering GmbH
-License: see /opt/precision-touchdown-analyzer/LICENSE
+License: see /opt/pta/LICENSE
 """
 
 WRAPPER = f"""#!/bin/sh
@@ -299,7 +300,7 @@ def build(out_dir: Path, wheels: list[Path], icon: Path | None) -> Path:
         tree.add(f"{PREFIX}/wheels/{wheel.name}", wheel.read_bytes())
     tree.add(f"{PREFIX}/LICENSE", (ROOT / "LICENSE").read_bytes())
     tree.add(f"{PREFIX}/bin/launcher", WRAPPER.encode(), 0o755)
-    tree.add("/lib/systemd/system/touchdown-analyzer.service", SERVICE.encode())
+    tree.add("/lib/systemd/system/pta.service", SERVICE.encode())
     tree.add(f"/usr/share/applications/{PACKAGE}.desktop", DESKTOP.encode())
     tree.add(f"/usr/share/doc/{PACKAGE}/copyright", COPYRIGHT.encode())
     tree.add(f"/usr/share/doc/{PACKAGE}/README.md", (ROOT / "README.md").read_bytes())

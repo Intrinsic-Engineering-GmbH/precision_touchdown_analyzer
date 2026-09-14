@@ -259,7 +259,7 @@ function renderRanking() {
   const pending = scored.filter(l => l.status !== "confirmed").sort((a, b) => (b.live ?? -1) - (a.live ?? -1));
   const row = (l, i) => `<tr>
     <td class="num mono">${i != null ? i + 1 : ""}</td>
-    <td><b class="mono">${escapeHtml(l.registration || "unknown")}</b><span class="muted" style="display:block;font-size:12px">${escapeHtml(l.aircraft_type || l.id)}</span></td>
+    <td><b class="${l.pilot ? "" : "mono"}">${escapeHtml(l.pilot || l.registration || "unknown")}</b><span class="muted" style="display:block;font-size:12px">${escapeHtml(l.pilot ? [l.registration, l.aircraft_type].filter(Boolean).join(" · ") || l.id : l.aircraft_type || l.id)}</span></td>
     <td class="mono">${l.touchdown_utc ? new Date(l.touchdown_utc).toLocaleTimeString([], { hour12: false }) : ""}</td>
     <td class="num mono">${escapeHtml(l.label)}</td>
     <td class="num"><span class="score${l.live === r.max_points ? " top" : ""}">${l.live == null ? "—" : fmt(r, l.live)}</span></td>

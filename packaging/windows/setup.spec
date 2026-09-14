@@ -27,7 +27,7 @@ EXE(
     wizard.scripts,
     wizard.binaries,
     wizard.datas,
-    name=f"PrecisionTouchdownAnalyzer-Setup-{__version__}",
+    name=f"PTA-Setup-{__version__}",
     icon=str(OUT / "icon.ico"),
     console=False,
     upx=False,

@@ -493,7 +493,7 @@ def main() -> int:
     """GUI entry point: no arguments opens the window; arguments run the CLI.
 
     One executable serves both, so the installed program can start itself
-    as the server child (``PrecisionTouchdownAnalyzer.exe serve ...``).
+    as the server child (``PTA.exe serve ...``).
     """
     args = [a for a in sys.argv[1:] if a != "--autostart"]
     if paths.frozen() and (sys.stdout is None or sys.stderr is None):

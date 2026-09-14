@@ -333,6 +333,21 @@ def test_confirm_renames_the_clip_and_records_the_judge(client: TestClient) -> N
     assert [h["action"] for h in body["history"]] == ["renamed", "confirmed"]
 
 
+def test_pilot_is_the_judges_entry_and_survives_a_reload(client: TestClient) -> None:
+    r = client.post("/api/landings/2026-09-13/L0001/edit", json={"pilot": "  Anna Muster "})
+    assert r.status_code == 200 and r.json()["pilot"] == "Anna Muster"
+    assert r.json()["history"][-1]["pilot_before"] == ""
+    # confirming with a name sets it; confirming without one keeps it
+    r = client.post("/api/landings/2026-09-13/L0001/confirm", json={"pilot": "Beat Beispiel"})
+    assert r.json()["pilot"] == "Beat Beispiel"
+    client.post("/api/landings/2026-09-13/L0001/reopen")
+    r = client.post("/api/landings/2026-09-13/L0001/confirm", json={})
+    assert r.json()["pilot"] == "Beat Beispiel"
+    # the store reads it back; a file written before the field existed loads too
+    assert client.get("/api/landings/2026-09-13/L0001").json()["pilot"] == "Beat Beispiel"
+    assert Landing.from_dict({**client.get("/api/landings/2026-09-13/L0002").json()}).pilot == ""
+
+
 def test_judge_can_move_the_contact_frame(client: TestClient) -> None:
     r = client.post("/api/landings/2026-09-13/L0001/edit", json={"frame": 90})
     body = r.json()

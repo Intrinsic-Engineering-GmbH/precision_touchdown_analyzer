@@ -61,7 +61,7 @@ def test_frozen_data_home_is_per_user(monkeypatch: pytest.MonkeyPatch, tmp_path:
     if sys.platform == "win32":
         assert home == tmp_path / "local" / paths.APP_NAME
     else:
-        assert home == tmp_path / "xdg" / "precision-touchdown-analyzer"
+        assert home == tmp_path / "xdg" / "pta"
 
 
 def test_bundled_tool_next_to_program(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_shortcut_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     )
     assert both[1].parent == tmp_path / "me" / "Desktop"
     assert winstall.shortcut_paths(desktop=False, start_menu=False) == []
-    assert winstall.default_install_dir() == tmp_path / "local" / "Programs" / paths.APP_TITLE
+    assert winstall.default_install_dir() == tmp_path / "local" / "Programs" / "PTA"
 
 
 # --- the icon ------------------------------------------------------------

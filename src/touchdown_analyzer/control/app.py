@@ -98,6 +98,7 @@ class AnalysisRequest(BaseModel):
 
 class ConfirmRequest(BaseModel):
     registration: str = ""
+    pilot: str = ""
     note: str = ""
 
 
@@ -107,6 +108,7 @@ class RejectRequest(BaseModel):
 
 class EditRequest(BaseModel):
     registration: str | None = None
+    pilot: str | None = None
     competition_number: str | None = None
     aircraft_type: str | None = None
     outcome: str | None = None
@@ -219,7 +221,11 @@ def create_app(service: CaptureService, review: ReviewService | None = None) -> 
     ) -> dict[str, Any]:
         return review.scored(
             review.confirm(
-                session, landing_id, registration=request.registration, note=request.note
+                session,
+                landing_id,
+                registration=request.registration,
+                pilot=request.pilot,
+                note=request.note,
             )
         )
 
@@ -239,6 +245,7 @@ def create_app(service: CaptureService, review: ReviewService | None = None) -> 
             session,
             landing_id,
             registration=request.registration,
+            pilot=request.pilot,
             competition_number=request.competition_number,
             aircraft_type=request.aircraft_type,
             outcome=request.outcome,

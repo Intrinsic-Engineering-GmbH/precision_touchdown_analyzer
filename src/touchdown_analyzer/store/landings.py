@@ -98,6 +98,7 @@ class Landing:
     aircraft_type: str = ""
     identified_by: str = ""  # ogn | judge | ""
     ogn: dict[str, Any] | None = None
+    pilot: str = ""  # entered by the judge; the key of the ranking
 
     # artefacts
     clip_path: str | None = None

@@ -235,6 +235,7 @@ class ReviewService:
         landing_id: str,
         *,
         registration: str = "",
+        pilot: str = "",
         note: str = "",
     ) -> Landing:
         store = self.store(session)
@@ -245,6 +246,8 @@ class ReviewService:
             detail["registration_before"] = landing.registration
             landing.registration = registration
             landing.identified_by = "judge"
+        if pilot.strip():
+            landing.pilot = pilot.strip()
         if note:
             landing.note = note
         landing.status = store_mod.CONFIRMED
@@ -273,6 +276,7 @@ class ReviewService:
         landing_id: str,
         *,
         registration: str | None = None,
+        pilot: str | None = None,
         competition_number: str | None = None,
         aircraft_type: str | None = None,
         outcome: str | None = None,
@@ -280,7 +284,7 @@ class ReviewService:
         reset_frame: bool = False,
         note: str | None = None,
     ) -> Landing:
-        """The judge's corrections: aircraft, what happened, and which frame."""
+        """The judge's corrections: aircraft, pilot, what happened, and which frame."""
         store = self.store(session)
         landing = self.landing(session, landing_id)
         detail: dict[str, Any] = {}
@@ -288,6 +292,9 @@ class ReviewService:
             detail["registration_before"] = landing.registration
             landing.registration = registration.strip().upper()
             landing.identified_by = "judge" if landing.registration else ""
+        if pilot is not None and pilot.strip() != landing.pilot:
+            detail["pilot_before"] = landing.pilot
+            landing.pilot = pilot.strip()
         if competition_number is not None:
             landing.competition_number = competition_number.strip().upper()
         if aircraft_type is not None:

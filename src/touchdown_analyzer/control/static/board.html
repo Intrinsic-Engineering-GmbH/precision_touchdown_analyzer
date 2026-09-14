@@ -117,7 +117,7 @@ body.asleep { cursor:none; }
     <h2>Results <span id="resultsCount"></span></h2>
     <div class="rows" id="resultsBox">
       <table>
-        <thead><tr><th class="num">#</th><th>Aircraft</th><th class="num">Landings</th><th>Each landing</th><th class="num">Total</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Pilot</th><th class="num">Landings</th><th>Each landing</th><th class="num">Total</th></tr></thead>
         <tbody id="results"></tbody>
       </table>
       <div class="empty" id="resultsEmpty" hidden>No confirmed landings yet.</div>
@@ -128,7 +128,7 @@ body.asleep { cursor:none; }
     <h2>Awaiting the judge <span id="pendingCount"></span></h2>
     <div class="rows" id="pendingBox">
       <table>
-        <thead><tr><th>Aircraft</th><th>Time</th><th></th></tr></thead>
+        <thead><tr><th>Pilot / aircraft</th><th>Time</th><th></th></tr></thead>
         <tbody id="pending"></tbody>
       </table>
       <div class="empty" id="pendingEmpty" hidden>Nothing to verify.</div>
@@ -139,7 +139,7 @@ body.asleep { cursor:none; }
 
 <footer>
   <div class="legend">
-    <span><b>Total</b> = the points of all confirmed landings of the aircraft added up</span>
+    <span><b>Total</b> = the points of all confirmed landings of the pilot added up</span>
     <span><b>Offset</b> from the target line, − short · + long</span>
   </div>
   <div class="corner">
@@ -174,24 +174,27 @@ const sessionTitle = s => {
   return isNaN(d) ? s : d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 };
 
-// Each aircraft's confirmed landings summed up, best total first; the
-// unverified landings one by one in order of touchdown. An aircraft without a
-// registration cannot be summed, so each of those stands alone.
+// Each pilot's confirmed landings summed up, best total first; the unverified
+// landings one by one in order of touchdown. The pilot is what the judge
+// typed; a landing without one falls back to the aircraft, and one without
+// either stands alone.
 function split() {
   const shown = landings.filter(l => l.kind === "landing" && l.status !== "rejected");
   const byTime = (a, b) => (a.touchdown_utc || a.first_utc || "").localeCompare(b.touchdown_utc || b.first_utc || "");
   const groups = new Map();
   for (const l of shown.filter(l => l.status === "confirmed").sort(byTime)) {
-    const key = l.registration || `#${l.id}`;
-    if (!groups.has(key)) groups.set(key, { key, registration: l.registration, competition_number: l.competition_number, aircraft_type: l.aircraft_type, landings: [], total: 0 });
+    const pilot = (l.pilot || "").trim();
+    const key = pilot ? "p:" + pilot.toLowerCase() : l.registration ? "a:" + l.registration : "#" + l.id;
+    if (!groups.has(key)) groups.set(key, { key, name: pilot || l.registration || "unknown", pilot, aircraft: [], landings: [], total: 0 });
     const g = groups.get(key);
     g.landings.push(l);
     g.total += l.score ?? 0;
-    // the newest names the aircraft, should OGN have learnt more about it
-    if (l.competition_number) g.competition_number = l.competition_number;
-    if (l.aircraft_type) g.aircraft_type = l.aircraft_type;
+    if (pilot) g.name = pilot;  // the spelling of the latest entry
+    const craft = [l.registration, l.competition_number].filter(Boolean).join(" ");
+    if (craft && !g.aircraft.includes(craft)) g.aircraft.push(craft);
+    if (!pilot && !g.aircraft.length && l.aircraft_type) g.aircraft.push(l.aircraft_type);
   }
-  const ranked = [...groups.values()].sort((a, b) => b.total - a.total || b.landings.length - a.landings.length || a.key.localeCompare(b.key));
+  const ranked = [...groups.values()].sort((a, b) => b.total - a.total || b.landings.length - a.landings.length || a.name.localeCompare(b.name));
   const pending = shown.filter(l => l.status !== "confirmed").sort(byTime);
   return { ranked, pending };
 }
@@ -206,6 +209,17 @@ function aircraftCell(l) {
   const sub = [l.competition_number, l.aircraft_type].filter(Boolean).join(" · ");
   return `<td class="reg mono">${escapeHtml(l.registration || "unknown")}${sub ? `<small>${escapeHtml(sub)}</small>` : ""}</td>`;
 }
+// the ranked row's name: the pilot, with the aircraft flown underneath
+function pilotCell(g) {
+  const sub = g.aircraft.join(" · ");
+  return `<td class="reg${g.pilot ? "" : " mono"}">${escapeHtml(g.name)}${sub ? `<small class="mono">${escapeHtml(sub)}</small>` : ""}</td>`;
+}
+// a pending landing: pilot if the judge already named one, else the aircraft
+function whoCell(l) {
+  if (!l.pilot) return aircraftCell(l);
+  const sub = [l.registration, l.competition_number].filter(Boolean).join(" ");
+  return `<td class="reg">${escapeHtml(l.pilot)}${sub ? `<small class="mono">${escapeHtml(sub)}</small>` : ""}</td>`;
+}
 const EACH_SHOWN = 4;
 function eachCell(g) {
   const shown = g.landings.slice(-EACH_SHOWN);
@@ -215,10 +229,10 @@ function eachCell(g) {
   return `<td class="each">${more > 0 ? `<span class="chip more">+${more} earlier</span>` : ""}${chips.join("")}</td>`;
 }
 const resultRow = (g, i) => `<tr class="${i === 0 ? "p1" : ""}">
-  <td class="num rank mono">${i + 1}</td>${aircraftCell(g)}
+  <td class="num rank mono">${i + 1}</td>${pilotCell(g)}
   <td class="num count mono">${g.landings.length}</td>${eachCell(g)}
   <td class="num points mono">${fmtPoints(g.total)}</td></tr>`;
-const pendingRow = l => `<tr>${aircraftCell(l)}<td class="mono">${time(l.touchdown_utc || l.first_utc)}</td><td class="wait">${l.outcome === "unseen" ? "judge picks frame" : "being verified"}</td></tr>`;
+const pendingRow = l => `<tr>${whoCell(l)}<td class="mono">${time(l.touchdown_utc || l.first_utc)}</td><td class="wait">${l.outcome === "unseen" ? "judge picks frame" : "being verified"}</td></tr>`;
 
 // How many rows fit: lay them all out, count those inside the box (rows differ
 // in height - an aircraft with many landings takes several lines), then show
@@ -246,7 +260,7 @@ function paint(key, items, render, box, tbody, pagesEl, emptyEl) {
 function render() {
   const { ranked, pending } = split();
   const n = ranked.reduce((s, g) => s + g.landings.length, 0);
-  $("resultsCount").textContent = n ? `${n} confirmed landing${n === 1 ? "" : "s"} · ${ranked.length} aircraft` : "";
+  $("resultsCount").textContent = n ? `${n} confirmed landing${n === 1 ? "" : "s"} · ${ranked.length} pilot${ranked.length === 1 ? "" : "s"}` : "";
   $("pendingCount").textContent = pending.length ? `${pending.length}` : "";
   paint("results", ranked, resultRow, $("resultsBox"), $("results"), $("resultsPages"), $("resultsEmpty"));
   paint("pending", pending, pendingRow, $("pendingBox"), $("pending"), $("pendingPages"), $("pendingEmpty"));

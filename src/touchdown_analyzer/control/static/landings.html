@@ -259,6 +259,8 @@ video { width:100%; border-radius:8px; background:#000; margin-top:12px; }
       <div class="ogn" id="ogn" hidden></div>
       <div class="grid">
         <div><label for="reg">Registration</label><input id="reg" placeholder="HB-3213" autocomplete="off" spellcheck="false"></div>
+        <div><label for="pilot">Pilot <span class="muted" id="pilotHint"></span></label>
+          <input id="pilot" placeholder="Anna Muster" autocomplete="off" list="pilots"><datalist id="pilots"></datalist></div>
         <div><label for="outcome">What happened</label>
           <select id="outcome">
             <option value="measured">touched down in view (measured)</option>
@@ -392,13 +394,30 @@ function renderList() {
       <td class="mono">${clock(x.touchdown_utc || x.first_utc)}<span class="sub">${x.id}</span></td>
       <td class="num"><span class="dist ${distClass(x)}">${escapeHtml(x.label)}</span>
         <span class="sub">${x.score != null ? `${x.score} pts` : ""}${x.outcome === "measured" && x.uncertainty_m ? ` &plusmn; ${x.uncertainty_m.toFixed(1)} m` : ""}</span></td>
-      <td>${x.registration ? `<b class="mono">${escapeHtml(x.registration)}</b>` : '<span class="muted">unknown</span>'}
+      <td>${x.registration ? `<b class="mono">${escapeHtml(x.registration)}</b>` : '<span class="muted">unknown</span>'}${x.pilot ? ` · ${escapeHtml(x.pilot)}` : ""}
         <span class="sub">${escapeHtml(x.aircraft_type || "")}${x.identified_by ? " · " + x.identified_by : ""}${x.direction > 0 ? " · →" : " · ←"}</span></td>
       <td>${badge(x)}</td>
     </tr>`).join("");
   for (const tr of $("rows").querySelectorAll("tr[data-id]")) {
     tr.addEventListener("click", () => select(tr.dataset.id));
   }
+}
+
+// The pilot: what the judge typed, or - for a new landing - the name given
+// to the same aircraft last time, offered as a suggestion. The ranking on the
+// board is per pilot, so every landing needs one before it is confirmed.
+function fillPilot(x) {
+  const names = [...new Set(list.map(l => l.pilot).filter(Boolean))].sort();
+  $("pilots").innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join("");
+  let hint = "";
+  let value = x.pilot || "";
+  if (!value && x.registration) {
+    const before = list.filter(l => l.id !== x.id && l.pilot && l.registration === x.registration)
+      .sort((a, b) => (b.touchdown_utc || b.first_utc || "").localeCompare(a.touchdown_utc || a.first_utc || ""))[0];
+    if (before) { value = before.pilot; hint = `(as for ${x.registration} before - change if someone else flew)`; }
+  }
+  $("pilot").value = value;
+  $("pilotHint").textContent = hint;
 }
 
 function badge(x) {
@@ -439,6 +458,7 @@ function renderCard() {
   $("cardTitle").textContent = x.status === "confirmed" ? "Confirmed" + (x.confirmed_utc ? " · " + clock(x.confirmed_utc) : "")
     : x.status === "rejected" ? "Rejected" : "Awaiting confirmation";
   $("reg").value = x.registration || "";
+  fillPilot(x);
   $("outcome").value = x.outcome === "unknown" ? "on_ground" : x.outcome;
   $("confirm").disabled = x.outcome === "unseen";
   $("confirm").title = x.outcome === "unseen" ? "Scrub to the contact frame and press Use this frame first" : "";
@@ -709,12 +729,12 @@ async function act(path, body) {
 $("confirm").addEventListener("click", async () => {
   // Any change to the outcome is saved along with the confirmation.
   if (current.outcome !== $("outcome").value) await act("edit", { outcome: $("outcome").value });
-  await act("confirm", { registration: $("reg").value, note: $("note").value });
+  await act("confirm", { registration: $("reg").value, pilot: $("pilot").value, note: $("note").value });
 });
 $("reject").addEventListener("click", () => act("reject", { note: $("note").value }));
 $("reopen").addEventListener("click", () => act("reopen", {}));
 $("saveEdit").addEventListener("click", () => act("edit", {
-  registration: $("reg").value, outcome: $("outcome").value, note: $("note").value,
+  registration: $("reg").value, pilot: $("pilot").value, outcome: $("outcome").value, note: $("note").value,
 }));
 $("useFrame").addEventListener("click", async () => {
   if (frameIndex == null || showingOverlay) { $("cardHint").textContent = "Scrub to the contact frame first."; return; }

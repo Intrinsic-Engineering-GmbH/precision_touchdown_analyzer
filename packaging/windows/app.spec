@@ -5,8 +5,8 @@ Built by packaging/windows/build.ps1 from the repository root:
 
     pyinstaller packaging/windows/app.spec --distpath build/dist --workpath build/work
 
-Produces build/dist/PrecisionTouchdownAnalyzer/ with two executables that
-share one set of libraries: PrecisionTouchdownAnalyzer.exe (windowed: the
+Produces build/dist/PTA/ with two executables that
+share one set of libraries: PTA.exe (windowed: the
 control window; with arguments it runs the CLI, which is how it starts its
 own server) and touchdown-analyzer.exe (a console for terminal use).
 ffmpeg.exe / ffprobe.exe are bundled from vendor/ffmpeg/ when present.
@@ -53,7 +53,7 @@ cli = Analysis(
     excludes=["matplotlib", "PIL", "IPython", "pytest"],
     noarchive=False,
 )
-MERGE((gui, "entry_gui", "PrecisionTouchdownAnalyzer"), (cli, "entry_cli", "touchdown-analyzer"))
+MERGE((gui, "entry_gui", "PTA"), (cli, "entry_cli", "touchdown-analyzer"))
 
 gui_pyz = PYZ(gui.pure)
 cli_pyz = PYZ(cli.pure)
@@ -63,7 +63,7 @@ gui_exe = EXE(
     gui.scripts,
     [],
     exclude_binaries=True,
-    name="PrecisionTouchdownAnalyzer",
+    name="PTA",
     icon=str(OUT / "icon.ico"),
     console=False,
     disable_windowed_traceback=False,
@@ -86,5 +86,5 @@ COLLECT(
     cli_exe,
     cli.binaries,
     cli.datas,
-    name="PrecisionTouchdownAnalyzer",
+    name="PTA",
 )

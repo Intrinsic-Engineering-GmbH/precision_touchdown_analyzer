@@ -13,22 +13,22 @@ in the browser.
 
 ## Install
 
-**Windows** - run `PrecisionTouchdownAnalyzer-Setup-<version>.exe`. It installs
-per user (no administrator rights) under `%LOCALAPPDATA%\Programs`, adds Start
-menu and desktop shortcuts and an entry in *Apps & features*. Recordings,
-results and the configuration go to `%LOCALAPPDATA%\PrecisionTouchdownAnalyzer`
-and survive an uninstall. Unattended: `Setup.exe /S [/D=C:\path]`.
+**Windows** - run `PTA-Setup-<version>.exe`. It installs per user (no
+administrator rights) to `%LOCALAPPDATA%\Programs\PTA`, adds Start menu and
+desktop shortcuts and an entry in *Apps & features*. Recordings, results and
+the configuration go to `%LOCALAPPDATA%\PTA` and survive an uninstall.
+Unattended: `PTA-Setup-<version>.exe /S [/D=C:\path]`.
 
 **Debian / Ubuntu** (amd64, Python 3.12 or 3.13):
 
 ```sh
-sudo apt install ./precision-touchdown-analyzer_<version>_amd64.deb
-sudo systemctl enable --now touchdown-analyzer      # web server on port 8080, data in /var/lib/precision-touchdown-analyzer
+sudo apt install ./pta_<version>_amd64.deb
+sudo systemctl enable --now pta      # web server on port 8080, data in /var/lib/pta
 ```
 
-The package carries its wheels and builds a venv under `/opt` on install, so no
-network is needed on the target machine; `ffmpeg` is a dependency. The control
-window is in the application menu and as `touchdown-analyzer-launcher`.
+The package carries its wheels and builds a venv under `/opt/pta` on install,
+so no network is needed on the target machine; `ffmpeg` is a dependency. The
+control window is in the application menu and as `pta` on the command line.
 
 **From source** - Python 3.12+, [ffmpeg](https://ffmpeg.org/) on `PATH`:
 
@@ -64,9 +64,9 @@ programs:
 | **Calibration** | Once per camera position: grab a still, click the surveyed markers (three pairs, one on each strip edge), solve. Aim for a residual under 0.10 m. |
 | **Capture** | Pre-flight check of the camera, start/stop the recording, live viewfinder, disk and frame-rate status. |
 | **Frames** | Step through a segment frame by frame and hand-mark a touchdown (the ground truth the analysis is scored against). |
-| **Landings** | The judge's page: every event of the day with its measured offset, the contact frame with the geometry drawn on, a scrubber and loop, a magnifier, the OGN proposal, and *Confirm / Reject / Use this frame*. *Analyse session* processes a finished day; *Follow recording* analyses while recording. |
+| **Landings** | The judge's page: every event of the day with its measured offset, the contact frame with the geometry drawn on, a scrubber and loop, a magnifier, the OGN proposal, the pilot's name (suggested from the aircraft's previous landing), and *Confirm / Reject / Use this frame*. *Analyse session* processes a finished day; *Follow recording* analyses while recording. |
 | **Scoring** | The club's rules - points on the line, deduction per metre short and per metre long, floor, decimals - with the scale drawn out and the day's ranking. |
-| **Board** (`/board`) | Read-only results for a big screen: one row per aircraft with its number of confirmed landings, each landing's offset and points, and the total (points added up over all its landings) that ranks it; the unverified landings listed beside without distance or score; refreshed every 5 s, follows the newest session. `?session=2026-09-13`, `?theme=light`, `?refresh=10`, `?page=8` (seconds per page when the list is long). |
+| **Board** (`/board`) | Read-only results for a big screen: one row per pilot (the name the judge entered; the aircraft where none) with the number of confirmed landings, each landing's offset and points, and the total (points added up over all its landings) that ranks it; the unverified landings listed beside without distance or score; refreshed every 5 s, follows the newest session. `?session=2026-09-13`, `?theme=light`, `?refresh=10`, `?page=8` (seconds per page when the list is long). |
 
 The same things from the command line:
 
@@ -134,7 +134,7 @@ python packaging\debian\build_deb.py    # downloads the wheels from PyPI, writes
 
 The .deb is assembled with the standard library and has so far only been
 checked structurally on Windows; the first install on a real Debian machine
-should be watched (`journalctl -u touchdown-analyzer`).
+should be watched (`journalctl -u pta`).
 
 Filming at the airfield records people as well as aircraft: agree on signage, a
 retention period for raw footage and who may access it before the first session.

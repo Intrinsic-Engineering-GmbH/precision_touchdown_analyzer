@@ -14,7 +14,7 @@ import os
 import sys
 from pathlib import Path
 
-APP_NAME = "PrecisionTouchdownAnalyzer"
+APP_NAME = "PTA"  # short: folder, executable and registry names
 APP_TITLE = "Precision Touchdown Analyzer"
 ENV_HOME = "TOUCHDOWN_ANALYZER_HOME"
 
@@ -47,7 +47,7 @@ def data_home() -> Path:
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
         return base / APP_NAME
     base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    return base / "precision-touchdown-analyzer"
+    return base / "pta"
 
 
 def enter_data_home() -> Path:

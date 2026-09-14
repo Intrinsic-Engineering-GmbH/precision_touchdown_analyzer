@@ -4,9 +4,9 @@ Built as a single executable (packaging/windows/setup.spec) that carries
 the application folder as app.zip. Installs per user - no administrator
 rights - and registers itself in Add/Remove Programs.
 
-    PrecisionTouchdownAnalyzer-Setup.exe            the wizard
-    PrecisionTouchdownAnalyzer-Setup.exe /S         silent, default folder
-    PrecisionTouchdownAnalyzer-Setup.exe /S /D=C:\\path   silent, that folder
+    PTA-Setup.exe            the wizard
+    PTA-Setup.exe /S         silent, default folder
+    PTA-Setup.exe /S /D=C:\\path   silent, that folder
 """
 
 from __future__ import annotations
