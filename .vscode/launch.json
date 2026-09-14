@@ -5,7 +5,7 @@
       "id": "source",
       "type": "promptString",
       "description": "RTSP URL or video file",
-      "default": "rtsp://root@192.168.1.90/axis-media/media.amp"
+      "default": "rtsp://root@192.168.200.222/axis-media/media.amp"
     },
     {
       "id": "session",

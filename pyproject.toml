@@ -20,6 +20,9 @@ touchdown-analyzer = "touchdown_analyzer.cli:main"
 # The control UI. The recorder itself stays stdlib-only, so `record` keeps
 # working even if this is not installed.
 ui = ["fastapi>=0.110", "uvicorn>=0.29"]
+# Detection and measurement (`analyze`, and the landings page of the UI).
+# 4.x pinned: 5.0 changed enough of the API to want a deliberate move.
+analysis = ["opencv-python-headless>=4.12,<5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -39,6 +42,10 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# The survey calculator predates the line limit; not worth reflowing.
+"tools/*" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

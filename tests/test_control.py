@@ -420,7 +420,7 @@ def client(service: CaptureService) -> TestClient:
 def test_page_is_served(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert "Capture control" in response.text
+    assert "Precision Touchdown Analyzer" in response.text and 'class="on">Capture' in response.text
 
 
 def test_status_endpoint(client: TestClient) -> None:
@@ -500,7 +500,7 @@ def test_calibration_image_before_grabbing(client: TestClient) -> None:
 def test_viewer_page_is_served(client: TestClient) -> None:
     response = client.get("/viewer")
     assert response.status_code == 200
-    assert "Frame viewer" in response.text
+    assert "Precision Touchdown Analyzer" in response.text and 'class="on">Frames' in response.text
 
 
 def test_segments_endpoint(client: TestClient, service: CaptureService) -> None:

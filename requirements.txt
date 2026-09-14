@@ -6,11 +6,9 @@
 # ffmpeg binary on PATH, not a Python package:
 #     winget install Gyan.FFmpeg
 #
-# The analysis side is not built yet. When it lands it needs roughly:
-# opencv-python
-# numpy
-# scipy
-# fastapi
-# uvicorn
-#
-# Pin versions once the stack is settled, e.g. numpy==2.1.3
+# The analysis side (touchdown-analyzer analyze, and the landings page of
+# the UI) needs OpenCV on top. Headless: no GUI toolkit is used.
+numpy>=2.0
+opencv-python-headless>=4.12,<5
+fastapi>=0.110
+uvicorn>=0.29

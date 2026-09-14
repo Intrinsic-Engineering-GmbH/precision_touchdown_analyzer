@@ -1,0 +1,9 @@
+{
+  "airfield": "LSTB",
+  "lat": 46.9769,
+  "lon": 7.1269,
+  "elevation_m": 434.0,
+  "radius_km": 3.0,
+  "enabled": true,
+  "timezone_offset_h": 2.0
+}

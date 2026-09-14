@@ -3,34 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Capture control</title>
+<title>Capture &middot; Precision Touchdown Analyzer</title>
 <style>
 :root {
-  color-scheme: light dark;
-  --bg: #f4f5f7;
-  --panel: #ffffff;
-  --ink: #14181f;
-  --muted: #5d6672;
-  --line: #d9dde3;
-  --accent: #1b5fbe;
-  --ok: #127a4a;
-  --warn: #9a6100;
-  --fail: #b3261e;
-  --live: #127a4a;
+  color-scheme: light;
+  --bg:#f4f5f7; --panel:#fff; --ink:#14181f; --muted:#5d6672; --line:#d9dde3;
+  --accent:#1b5fbe; --ok:#127a4a; --warn:#9a6100; --fail:#b3261e; --amber:#c47f00; --live:#127a4a;
+  /* the brand bar */
+  --bar:#fff; --bar-ink:#14181f; --bar-muted:#5d6672; --bar-line:#d9dde3;
+  --bar-well:#eef0f3; --bar-hover:#e3e6ea; --bar-hover-ink:#14181f;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14171c;
-    --panel: #1c2027;
-    --ink: #e8ebef;
-    --muted: #98a2b0;
-    --line: #2c323b;
-    --accent: #5b9bf5;
-    --ok: #4cc38a;
-    --warn: #e0a01e;
-    --fail: #f26d68;
-    --live: #4cc38a;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#14171c; --panel:#1c2027; --ink:#e8ebef; --muted:#98a2b0; --line:#2c323b;
+  --accent:#5b9bf5; --ok:#4cc38a; --warn:#e0a01e; --fail:#f26d68; --amber:#f0b429; --live:#4cc38a;
+  --bar:#151a22; --bar-ink:#e8ebef; --bar-muted:#98a2b0; --bar-line:#2a323d;
+  --bar-well:#0f1319; --bar-hover:#1f2733; --bar-hover-ink:#fff;
 }
 * { box-sizing: border-box; }
 body {
@@ -39,13 +27,25 @@ body {
   color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-.wrap { max-width: 1040px; margin: 0 auto; padding: 20px 16px 64px; }
-header {
-  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
-.ver { color: var(--muted); font-size: 13px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 16px 16px 64px; }
+/* brand bar: the product, the programs, the live dot */
+header.brand { display:flex; align-items:center; gap:22px; flex-wrap:wrap; margin:0 0 18px;
+               padding:12px 18px; border-radius:12px; background:var(--bar); color:var(--bar-ink);
+               border:1px solid var(--bar-line); }
+.brand .mark { display:flex; align-items:center; gap:12px; }
+.brand .name { font-size:16px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; line-height:1.15; }
+.brand .ver { font-size:11px; font-weight:500; letter-spacing:.02em; text-transform:none; color:var(--bar-muted); margin-left:8px; }
+.brand .apps { display:inline-flex; gap:2px; padding:3px; border-radius:9px; background:var(--bar-well);
+               border:1px solid var(--bar-line); margin-left:auto; }
+.brand .apps a { display:inline-block; padding:7px 16px; border-radius:7px; font-size:13px; font-weight:600;
+                 letter-spacing:.03em; color:var(--bar-muted); text-decoration:none; }
+.brand .apps a:hover { color:var(--bar-hover-ink); background:var(--bar-hover); }
+.brand .apps a.on { color:#1a1200; background:#f0b429; }
+.brand .theme { font:inherit; font-size:15px; line-height:1; padding:7px 11px; border-radius:7px; cursor:pointer;
+                background:var(--bar-well); color:var(--bar-ink); border:1px solid var(--bar-line); }
+.brand .theme:hover { background:var(--bar-hover); color:var(--bar-hover-ink); }
+.brand .dot { margin-left:0; color:var(--bar-muted); }
+@media (max-width: 900px) { .brand .apps { margin-left:0; } }
 .dot {
   margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
   font-size: 13px; color: var(--muted);
@@ -120,15 +120,46 @@ tr:last-child td { border-bottom: 0; }
 [hidden] { display: none !important; }
 code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }
 </style>
+<script>
+// The theme is the user's choice, kept in this browser; the OS preference
+// only decides the first visit. Applied before paint to avoid a flash.
+(function () {
+  let theme = null;
+  try { theme = localStorage.getItem("tda.theme"); } catch (e) {}
+  if (theme !== "light" && theme !== "dark") {
+    theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
 </head>
 <body>
 <div class="wrap">
 
-<header>
-  <h1>Capture control</h1>
-  <span class="ver" id="ver"></span>
-  <a href="/calibration" style="color:var(--accent); font-size:13px">calibration</a>
-  <a href="/viewer" style="color:var(--accent); font-size:13px">frame viewer &rarr;</a>
+<header class="brand">
+  <div class="mark">
+    <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+      <defs><path id="gull" d="M -36 2 C -26 -9 -13 -11 -4 -4 C -2 -3 2 -3 4 -4 C 13 -11 26 -9 36 2 C 26 -3 14 -1 6 3 C 4.5 7 0 9.5 -3.5 8.5 C -6 7.5 -6 4.5 -6 3 C -14 -1 -26 -3 -36 2 Z"/></defs>
+      <circle cx="20" cy="20" r="19.5" fill="#fff"/>
+      <circle cx="20" cy="20" r="18.2" fill="#1f3a93"/>
+      <circle cx="20" cy="20" r="15.8" fill="none" stroke="#fff" stroke-width="1.1"/>
+      <g fill="#fff">
+        <use href="#gull" transform="translate(20.5 12.5) scale(0.30)"/>
+        <use href="#gull" transform="translate(20 20.3) scale(0.34)"/>
+        <use href="#gull" transform="translate(20 28) scale(0.34)"/>
+      </g>
+    </svg>
+    <div>
+      <div class="name">Precision Touchdown Analyzer <span class="ver" id="ver"></span></div>
+    </div>
+  </div>
+  <nav class="apps" aria-label="programs">
+    <a href="/" class="on">Capture</a>
+    <a href="/calibration">Calibration</a>
+    <a href="/viewer">Frames</a>
+    <a href="/landings">Landings</a>
+  </nav>
+  <button class="theme" id="themeBtn" type="button" aria-label="switch light / dark">☾</button>
   <span class="dot" id="dot"><i></i><span id="dotText">connecting</span></span>
 </header>
 
@@ -137,7 +168,7 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
   <div class="grid">
     <div class="wide">
       <label for="source">Source (RTSP URL or file) <span id="savedHint" class="muted"></span></label>
-      <input id="source" placeholder="rtsp://root:password@192.168.1.90/axis-media/media.amp" autocomplete="off" spellcheck="false">
+      <input id="source" placeholder="rtsp://root:password@192.168.200.222/axis-media/media.amp" autocomplete="off" spellcheck="false">
       <label style="display:flex; align-items:center; gap:6px; margin-top:6px">
         <input type="checkbox" id="remember" style="width:auto" checked>
         <span class="muted">remember this URL on the server (.env) so it can be left empty next time</span>
@@ -262,7 +293,7 @@ function renderStatus(s) {
   recording = s.recording;
   $("ver").textContent = "v" + s.version;
   $("savedHint").textContent = s.saved_source ? "- saved: " + s.saved_source + " (leave empty to use it)" : "";
-  $("source").placeholder = s.saved_source || "rtsp://root:password@192.168.1.90/axis-media/media.amp";
+  $("source").placeholder = s.saved_source || "rtsp://root:password@192.168.200.222/axis-media/media.amp";
   $("start").disabled = recording;
   $("stop").disabled = !recording;
   $("probeBtn").disabled = recording;
@@ -478,6 +509,24 @@ poll();
 refreshSessions();
 setInterval(poll, 1000);
 setInterval(refreshSessions, 15000);
+
+// ---- light / dark switch ------------------------------------------------------
+(function () {
+  const button = document.getElementById("themeBtn");
+  if (!button) return;
+  const paint = () => {
+    const dark = document.documentElement.dataset.theme === "dark";
+    button.textContent = dark ? "\u2600" : "\u263E";
+    button.title = dark ? "Switch to the white design" : "Switch to the black design";
+  };
+  paint();
+  button.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("tda.theme", next); } catch (e) {}
+    paint();
+  });
+})();
 </script>
 </body>
 </html>

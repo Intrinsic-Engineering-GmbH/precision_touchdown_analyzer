@@ -96,6 +96,27 @@ def build_parser() -> argparse.ArgumentParser:
     idx.add_argument("--hash", action="store_true", help="also record a sha256 per segment")
     idx.set_defaults(func=cmd_index)
 
+    ana = sub.add_parser(
+        "analyze",
+        help="find the landings in a recorded session and measure them",
+        description="Track every aircraft through the raw segments, find the touchdown "
+        "and its offset from the target line, and cut a clip per landing.",
+    )
+    ana.add_argument("--session", required=True)
+    ana.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    ana.add_argument(
+        "--out",
+        type=Path,
+        help="where landings.json, clips and overlays go (default: <root>/../landings/<session>)",
+    )
+    ana.add_argument("--calibration", type=Path, default=Path("config/calibration.json"))
+    ana.add_argument("--segment", action="append", help="analyse only this segment (repeatable)")
+    ana.add_argument("--no-clips", action="store_true", help="skip cutting clips")
+    ana.add_argument(
+        "--fresh", action="store_true", help="discard the session's earlier results first"
+    )
+    ana.set_defaults(func=cmd_analyze)
+
     web = sub.add_parser(
         "serve",
         help="browser UI to control captures",
@@ -231,6 +252,83 @@ def cmd_index(args: argparse.Namespace) -> int:
             print(f"    {outlier}")
 
     print(f"\nindex written to {session_dir / segments_mod.INDEX_NAME}")
+    return EXIT_OK
+
+
+def landings_dir(root: Path, session: str) -> Path:
+    """``data/raw`` -> ``data/landings/<session>``: results beside the raw footage."""
+    return root.parent / "landings" / session
+
+
+def cmd_analyze(args: argparse.Namespace) -> int:
+    try:
+        from touchdown_analyzer.analysis import pipeline
+    except ImportError as exc:
+        print(f"\nanalysis needs OpenCV: {exc}")
+        print('  pip install -e ".[analysis]"')
+        return EXIT_TOOLING
+    from touchdown_analyzer.calibration import homography as hg
+    from touchdown_analyzer.store.landings import LandingStore
+
+    session_dir = args.root / args.session
+    if not session_dir.is_dir():
+        print(f"no such session directory: {session_dir}")
+        return EXIT_TOOLING
+    if not args.calibration.is_file():
+        print(f"no calibration at {args.calibration}; calibrate first (touchdown-analyzer serve)")
+        return EXIT_TOOLING
+    calibration = hg.load(args.calibration)
+
+    ffmpeg = None if args.no_clips else ff.find_tool("ffmpeg", args.ffmpeg)
+    ffprobe = ff.find_tool("ffprobe", args.ffprobe)
+    try:
+        index = segments_mod.load_index(session_dir)
+    except FileNotFoundError:
+        index = segments_mod.build_index(session_dir, ffprobe)
+    refs = pipeline.segment_refs(session_dir, index)
+    if args.segment:
+        wanted = set(args.segment)
+        refs = [r for r in refs if r.name in wanted]
+    if not refs:
+        print("nothing to analyse")
+        return EXIT_TOOLING
+
+    out_dir = args.out or landings_dir(args.root, args.session)
+    store = LandingStore(out_dir)
+    if args.fresh:
+        store.clear()
+    analyzer = pipeline.Analyzer(
+        args.session,
+        calibration,
+        store,
+        out_dir=out_dir,
+        ffmpeg=ffmpeg,
+        cut_clips=not args.no_clips,
+    )
+    analyzer.add_pieces(pipeline.segment_refs(session_dir, index))
+
+    print(f"analysing {len(refs)} segment(s) of {args.session}")
+    print(
+        f"calibration residual {calibration.residual_m:.2f} m"
+        + ("" if calibration.acceptable else "  (above target - numbers will be rough)")
+    )
+
+    def found(landing) -> None:  # noqa: ANN001
+        store.add(landing)
+        when = (landing.touchdown_utc or "")[11:19]
+        print(
+            f"  {landing.id}  {when} UTC  {landing.label():>10}  "
+            f"{landing.outcome:<10} {'->' if landing.direction > 0 else '<-'}"
+            f"{'  ' + '; '.join(landing.flags) if landing.flags else ''}"
+        )
+
+    for ref in refs:
+        print(f"{ref.name} ...", flush=True)
+        analyzer.run_segment(ref, on_landing=found)
+    analyzer.finish(on_landing=found)
+
+    results = store.all()
+    print(f"\n{len(results)} track(s) recorded in {store.path}")
     return EXIT_OK
 
 

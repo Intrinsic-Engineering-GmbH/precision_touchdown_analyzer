@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from touchdown_analyzer import __version__
 from touchdown_analyzer.capture.preview import BOUNDARY
+from touchdown_analyzer.control.review import ReviewService
 from touchdown_analyzer.control.service import CaptureService, ServiceError
 
 STATIC = Path(__file__).parent / "static"
@@ -69,6 +70,9 @@ class WindowRequest(BaseModel):
     session: str
     segment: str
     frame: int = Field(default=0, ge=0)
+    # Frames extracted either side of ``frame``. The default suits stepping;
+    # looping a whole landing asks for enough to hold it in one window.
+    half: int = Field(default=30, ge=5, le=180)
 
 
 class MeasureRequest(BaseModel):
@@ -86,8 +90,44 @@ class AnnotationRequest(BaseModel):
     note: str = ""
 
 
-def create_app(service: CaptureService) -> FastAPI:
+class AnalysisRequest(BaseModel):
+    session: str
+    follow: bool = False  # keep watching for new segments while recording
+    fresh: bool = False  # discard the session's earlier results first
+
+
+class ConfirmRequest(BaseModel):
+    registration: str = ""
+    note: str = ""
+
+
+class RejectRequest(BaseModel):
+    note: str = ""
+
+
+class EditRequest(BaseModel):
+    registration: str | None = None
+    competition_number: str | None = None
+    aircraft_type: str | None = None
+    outcome: str | None = None
+    frame: int | None = Field(default=None, ge=0)
+    reset_frame: bool = False  # drop the judge's frame, back to the automatic one
+    note: str | None = None
+
+
+class FieldRequest(BaseModel):
+    airfield: str = ""
+    lat: float = 0.0
+    lon: float = 0.0
+    elevation_m: float = 0.0
+    radius_km: float = Field(default=3.0, gt=0, le=50)
+    enabled: bool = False
+    timezone_offset_h: float = 2.0
+
+
+def create_app(service: CaptureService, review: ReviewService | None = None) -> FastAPI:
     app = FastAPI(title="touchdown-analyzer capture control", version=__version__)
+    review = review or ReviewService(service)
 
     @app.exception_handler(ServiceError)
     async def _service_error(_: Any, exc: ServiceError) -> JSONResponse:
@@ -119,6 +159,8 @@ def create_app(service: CaptureService) -> FastAPI:
             )
         except ServiceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # OGN positions are only useful if they were logged while it happened.
+        review.start_poller(request.session)
         return service.status()
 
     @app.post("/api/record/stop")
@@ -127,7 +169,98 @@ def create_app(service: CaptureService) -> FastAPI:
             service.stop()
         except ServiceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        review.stop_poller()
         return service.status()
+
+    # -- landings: analysis, results, the judge -----------------------------
+
+    @app.get("/landings", include_in_schema=False)
+    async def landings_page() -> FileResponse:
+        return FileResponse(STATIC / "landings.html")
+
+    @app.get("/api/analysis/status")
+    async def analysis_status() -> dict[str, Any]:
+        return review.analysis_status()
+
+    @app.post("/api/analysis/start")
+    async def analysis_start(request: AnalysisRequest) -> dict[str, Any]:
+        return review.start_analysis(request.session, follow=request.follow, fresh=request.fresh)
+
+    @app.post("/api/analysis/stop")
+    async def analysis_stop() -> dict[str, Any]:
+        return review.stop_analysis()
+
+    @app.get("/api/landings")
+    async def landing_sessions() -> list[str]:
+        return review.sessions_with_results()
+
+    @app.get("/api/landings/{session}")
+    async def landings(session: str) -> dict[str, Any]:
+        return review.summary(session)
+
+    @app.get("/api/landings/{session}/{landing_id}")
+    async def landing(session: str, landing_id: str) -> dict[str, Any]:
+        return review.landing(session, landing_id).to_dict()
+
+    @app.post("/api/landings/{session}/{landing_id}/confirm")
+    async def landing_confirm(
+        session: str, landing_id: str, request: ConfirmRequest
+    ) -> dict[str, Any]:
+        return review.confirm(
+            session, landing_id, registration=request.registration, note=request.note
+        ).to_dict()
+
+    @app.post("/api/landings/{session}/{landing_id}/reject")
+    async def landing_reject(
+        session: str, landing_id: str, request: RejectRequest
+    ) -> dict[str, Any]:
+        return review.reject(session, landing_id, note=request.note).to_dict()
+
+    @app.post("/api/landings/{session}/{landing_id}/reopen")
+    async def landing_reopen(session: str, landing_id: str) -> dict[str, Any]:
+        return review.reopen(session, landing_id).to_dict()
+
+    @app.post("/api/landings/{session}/{landing_id}/edit")
+    async def landing_edit(session: str, landing_id: str, request: EditRequest) -> dict[str, Any]:
+        return review.edit(
+            session,
+            landing_id,
+            registration=request.registration,
+            competition_number=request.competition_number,
+            aircraft_type=request.aircraft_type,
+            outcome=request.outcome,
+            frame=request.frame,
+            reset_frame=request.reset_frame,
+            note=request.note,
+        ).to_dict()
+
+    @app.get("/api/landings/{session}/{landing_id}/overlay.jpg", include_in_schema=False)
+    async def landing_overlay(session: str, landing_id: str) -> FileResponse:
+        try:
+            path = review.artefact(session, landing_id, "overlay")
+        except ServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return FileResponse(path, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/landings/{session}/{landing_id}/clip.mp4", include_in_schema=False)
+    async def landing_clip(session: str, landing_id: str) -> FileResponse:
+        try:
+            path = review.artefact(session, landing_id, "clip")
+        except ServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return FileResponse(path, media_type="video/mp4")
+
+    @app.get("/api/ogn")
+    async def ogn_status() -> dict[str, Any]:
+        return review.ogn_status()
+
+    @app.post("/api/ogn")
+    async def ogn_save(request: FieldRequest) -> dict[str, Any]:
+        return review.save_field(request.model_dump())
+
+    @app.post("/api/ogn/logbook/{session}")
+    async def ogn_logbook(session: str) -> dict[str, Any]:
+        return review.fetch_logbook(session)
 
     @app.post("/api/probe")
     async def probe(request: ProbeRequest) -> dict[str, Any]:
@@ -214,7 +347,9 @@ def create_app(service: CaptureService) -> FastAPI:
     @app.post("/api/viewer/window")
     async def viewer_window(request: WindowRequest) -> dict[str, Any]:
         try:
-            return service.frame_window(request.session, request.segment, request.frame)
+            return service.frame_window(
+                request.session, request.segment, request.frame, half=request.half
+            )
         except ServiceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

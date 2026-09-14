@@ -389,10 +389,10 @@ Special cases to handle explicitly:
 ### 4.3 From contact point to metres
 
 ```python
-p_img   = undistort(contact_point_px)
-p_world = perspective_transform(p_img, H)      # (x, y) in metres
-longitudinal = p_world.x                       # signed distance to target line
-lateral      = p_world.y                       # offset from center line
+p_img = undistort(contact_point_px)
+p_world = perspective_transform(p_img, H)  # (x, y) in metres
+longitudinal = p_world.x  # signed distance to target line
+lateral = p_world.y  # offset from center line
 ```
 
 **Both landing directions are covered by one calibration.** The camera looks at
@@ -433,6 +433,80 @@ therefore not optional — at 30 fps the same setup lands around 0.4 m.
   measures the known spacing.
 - Roll a wheel to a tape-measured point and "land" it — a static ground truth for
   the geometry alone, independent of the timing question.
+
+### 4.6 What the first footage changed (13 Sept 2026, Bellechasse)
+
+The estimator of §4.2 was written against the numbers of §2; the first ten
+test clips were shot from a low tripod with a six-marker calibration whose
+residual is 2.25 m. Three things did not survive contact with them, and the
+implementation in `analysis/` reflects that:
+
+**The lowest-pixel rule does not find the wheel.** MOG2's shadow flag misses a
+hard sunlit shadow on grass, so the silhouette's lowest pixel is the bottom
+of the shadow, metres from the wheel. The split into aircraft and shadow is
+therefore done separately, at full resolution, against the background model
+(a shadow is a darker copy of the background with the same chroma). Even
+then the belly of a white fuselage is flat to a pixel over a hundred columns
+and a per-frame minimum wanders along it, and the black tyre is sometimes in
+the aircraft mask and sometimes not. What is reliable is the tyre itself in
+the luminance profile — black rubber reads at ~0.1 of the background where
+shadow reads ~0.4 — so the wheel column is taken from that, once per track.
+
+**The ground run is not level in calibrated coordinates.** With a 2 m
+calibration residual (and a heading a few degrees off the survey axis) the
+apparent across-strip coordinate drifts by ~2 m over the window. The
+descent/ground hinge fit therefore has a free slope on both legs. That costs
+something: a landing (steep then shallow) and a take-off (shallow then steep)
+now look alike to the depth cue alone, and a drift-sized trend cannot be told
+from a slow climb. The shadow settles it when there is one; without a shadow
+the leg closer to level is the ground, and a single-line trend only counts as
+height changing above 3 m/s of apparent depth.
+
+**In sunshine the shadow is the best cue, and it needs a corner, not a zero.**
+With the sun high the fuselage shadow lies directly under the wheel, so there
+is no lit gap that closes at contact; what shrinks linearly with height is
+the run of dark rows under the belly before sunlit ground begins, and it
+settles at whatever the sun leaves under the wheel on the ground. The fit
+looks for the corner of that series with a free floor. It is calibration-free
+and, on the one measurable landing of the day (HB-3213, ~1.5 s in frame),
+puts the contact within a few frames of what a 3× zoom of the tyre shows.
+
+**A flat flare has no sharp corner.** The depth cue breaks early — the descent
+eases off exponentially before the tyre touches — and the shadow cue late —
+the wing unloads for a second after contact and its shadow keeps moving. On
+HB-3213 they were 21 frames apart around the true contact. When both see a
+landing the estimate is taken between them and their spread is the reported
+uncertainty (±6 m on that landing, honestly). The sub-frame precision of
+§4.4 stands for a landing with a real sink rate; for a greaser the instant is
+physically soft, and the judge's scrubber is the right tool for the last
+metres.
+
+**Overcast afternoons have no shadow at all.** Then only the depth cue is
+left, and with this calibration it can say "rolling or floating level" but
+not which — a glider skimming the whole window a hand's width up (HB-1827 at
+16:59) reads exactly like one rolling through it. Such tracks are reported as
+*pick frame*, not as a bound: the judge scrubs to the contact and scores that
+frame. The OGN FlightBook settles the other half of the ambiguity, landing
+versus take-off, from the logbook minute. A calibration at the 0.10 m target
+and the mast of §2.3 are what would let the depth cue carry the afternoon on
+its own.
+
+**The tyre has to be tracked as an object, not re-found per frame.** Read
+frame by frame, the contact point hopped between the rubber and the fairing
+or belly 10–20 px above it — the black tyre is inside the aircraft mask in
+some frames and classified as shadow in others — and occasionally to another
+dark part altogether (the second main wheel of a taildragger, the tug when tug
+and glider share one blob). Both cues feed on that row, so it matters. The
+implementation now finds the black compact blobs along the belly in every
+frame (cut adaptively above the blackest pixel there: the tyre core is far
+below the umbra in sun and merely the darkest thing under an overcast sky),
+fits the wheel's column as a quadratic in time through them with outliers
+rejected, takes in every frame the blob nearest that column as *the* tyre
+and its bottom edge as the contact row, smooths those rows the same way, and
+interpolates only where the tyre is genuinely hidden. Clipped frames are
+neither fitted nor drawn. On HB-3213 the tyre is seen in 55 of 64 frames,
+the row moves at most 3.5 px between frames, and the result lands at −3.2 m —
+the frame the 3× zoom picks.
 
 ---
 

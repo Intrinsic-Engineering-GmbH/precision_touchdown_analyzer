@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landings &middot; Precision Touchdown Analyzer</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg:#f4f5f7; --panel:#fff; --ink:#14181f; --muted:#5d6672; --line:#d9dde3;
+  --accent:#1b5fbe; --ok:#127a4a; --warn:#9a6100; --fail:#b3261e; --amber:#c47f00; --live:#127a4a;
+  /* the brand bar */
+  --bar:#fff; --bar-ink:#14181f; --bar-muted:#5d6672; --bar-line:#d9dde3;
+  --bar-well:#eef0f3; --bar-hover:#e3e6ea; --bar-hover-ink:#14181f;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#14171c; --panel:#1c2027; --ink:#e8ebef; --muted:#98a2b0; --line:#2c323b;
+  --accent:#5b9bf5; --ok:#4cc38a; --warn:#e0a01e; --fail:#f26d68; --amber:#f0b429; --live:#4cc38a;
+  --bar:#151a22; --bar-ink:#e8ebef; --bar-muted:#98a2b0; --bar-line:#2a323d;
+  --bar-well:#0f1319; --bar-hover:#1f2733; --bar-hover-ink:#fff;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.wrap { max-width:1440px; margin:0 auto; padding:16px 16px 64px; }
+a { color:var(--accent); }
+
+/* brand bar: the product, the programs, the live dot */
+header.brand { display:flex; align-items:center; gap:22px; flex-wrap:wrap; margin:0 0 18px;
+               padding:12px 18px; border-radius:12px; background:var(--bar); color:var(--bar-ink);
+               border:1px solid var(--bar-line); }
+.brand .mark { display:flex; align-items:center; gap:12px; }
+.brand .name { font-size:16px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; line-height:1.15; }
+.brand .ver { font-size:11px; font-weight:500; letter-spacing:.02em; text-transform:none; color:var(--bar-muted); margin-left:8px; }
+.brand .apps { display:inline-flex; gap:2px; padding:3px; border-radius:9px; background:var(--bar-well);
+               border:1px solid var(--bar-line); margin-left:auto; }
+.brand .apps a { display:inline-block; padding:7px 16px; border-radius:7px; font-size:13px; font-weight:600;
+                 letter-spacing:.03em; color:var(--bar-muted); text-decoration:none; }
+.brand .apps a:hover { color:var(--bar-hover-ink); background:var(--bar-hover); }
+.brand .apps a.on { color:#1a1200; background:#f0b429; }
+.brand .theme { font:inherit; font-size:15px; line-height:1; padding:7px 11px; border-radius:7px; cursor:pointer;
+                background:var(--bar-well); color:var(--bar-ink); border:1px solid var(--bar-line); }
+.brand .theme:hover { background:var(--bar-hover); color:var(--bar-hover-ink); }
+.brand .dot { margin-left:0; color:var(--bar-muted); }
+@media (max-width: 900px) { .brand .apps { margin-left:0; } }
+
+/* the page's own controls */
+.toolbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; padding:0 4px; }
+.toolbar .field { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); margin:0; }
+.toolbar .check { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); margin:0; }
+.toolbar .check input { width:auto; }
+.muted { color:var(--muted); font-size:13px; }
+.mono { font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-variant-numeric:tabular-nums; }
+select, input { padding:7px 10px; font:inherit; font-size:14px; color:var(--ink); background:var(--bg);
+                border:1px solid var(--line); border-radius:7px; }
+button { font:inherit; font-weight:550; font-size:14px; padding:8px 16px; border-radius:7px;
+         border:1px solid transparent; cursor:pointer; background:var(--accent); color:#fff; }
+button.ghost { background:transparent; border-color:var(--line); color:var(--ink); }
+button.danger { background:var(--fail); }
+button.amber { background:var(--amber); color:#1a1200; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.dot { margin-left:auto; display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--muted); }
+.dot i { width:9px; height:9px; border-radius:50%; background:var(--muted); display:inline-block; }
+.dot.live i { background:var(--ok); animation:pulse 1.6s infinite; }
+.dot.down i { background:var(--fail); }
+@keyframes pulse { 50% { opacity:.25; } }
+
+.cols { display:grid; grid-template-columns:minmax(0,3fr) minmax(320px,2fr); gap:16px; }
+@media (max-width: 980px) { .cols { grid-template-columns:1fr; } }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+.panel > h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 12px;
+              display:flex; align-items:baseline; gap:10px; }
+.panel > h2 span { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:400; }
+
+#stage { position:relative; background:#000; border-radius:8px; overflow:hidden; aspect-ratio:16/9; }
+#shot { width:100%; height:100%; display:block; object-fit:contain; }
+#svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+/* the magnifier, as in the frame viewer */
+#lens { position:absolute; width:190px; height:190px; border-radius:50%; border:2px solid var(--amber);
+        box-shadow:0 3px 14px rgba(0,0,0,.45); background-repeat:no-repeat; pointer-events:none;
+        display:none; z-index:5; background-color:#000; }
+#lens.on { display:block; }
+#lens::after { content:""; position:absolute; inset:0; border-radius:50%;
+  background:linear-gradient(var(--amber),var(--amber)) 50% 50%/1px 100% no-repeat,
+             linear-gradient(var(--amber),var(--amber)) 50% 50%/100% 1px no-repeat; opacity:.9; }
+#shot { cursor:crosshair; }
+button.ghost.active { border-color:var(--amber); color:var(--amber); }
+#scrub { width:100%; margin-top:10px; }
+.scrubrow { display:flex; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap; }
+.scrubrow .keys { margin-left:auto; white-space:nowrap; }
+.frameinfo { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:baseline; margin-top:10px;
+             padding:8px 12px; border-radius:8px; background:var(--bg); border:1px solid var(--line);
+             font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:13px;
+             font-variant-numeric:tabular-nums; min-height:38px; }
+.frameinfo .hint { color:var(--muted); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
+.frameinfo .k { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+                margin-right:6px; }
+.frameinfo .v { color:var(--ink); font-weight:600; }
+.frameinfo .v.amber { color:var(--amber); }
+.frameinfo .v.warn { color:var(--warn); }
+kbd { font:12px ui-monospace,Consolas,monospace; background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+
+/* measurement tiles: each as wide as its content, never a wrapped value;
+   when the panel is narrow whole tiles move to a second row instead */
+.tiles { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.tile { flex:1 1 auto; min-width:max-content; background:var(--bg); border:1px solid var(--line);
+        border-radius:8px; padding:10px 14px; }
+.tile b { display:block; font-size:19px; font-weight:600; font-variant-numeric:tabular-nums;
+          letter-spacing:-.01em; white-space:nowrap; }
+.tile span { white-space:nowrap; }
+.tile.big { flex-grow:2; }
+.tile.big b { font-size:30px; }
+.tile.small b { font-size:15px; }
+.tile span { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.tile.warn b { color:var(--warn); }
+.tile.ok b { color:var(--ok); }
+
+.card { margin-top:14px; border:1px solid var(--amber); border-radius:10px; padding:14px;
+        background:color-mix(in srgb,var(--amber) 8%,transparent); }
+.card.confirmed { border-color:var(--ok); background:color-mix(in srgb,var(--ok) 8%,transparent); }
+.card.rejected { border-color:var(--line); background:transparent; opacity:.8; }
+.card h3 { margin:0 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--amber); }
+.card.confirmed h3 { color:var(--ok); }
+.card.rejected h3 { color:var(--muted); }
+.grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }
+label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+.grid input, .grid select { width:100%; }
+.row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+.flags { margin:10px 0 0; padding:0; list-style:none; font-size:13px; color:var(--warn); }
+.flags li::before { content:"\25B2 "; font-size:10px; }
+.ogn { font-size:13px; margin-top:8px; padding:8px 10px; border-radius:7px; background:var(--bg); border:1px solid var(--line); }
+.ogn b { color:var(--accent); }
+
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th, td { text-align:left; padding:8px 8px 8px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:550; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+tr.sel td { background:color-mix(in srgb,var(--accent) 10%,transparent); }
+tbody tr { cursor:pointer; }
+tbody tr:hover td { background:color-mix(in srgb,var(--accent) 6%,transparent); }
+.badge { display:inline-block; font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase;
+         padding:2px 6px; border-radius:4px; border:1px solid currentColor; }
+.badge.pending { color:var(--amber); }
+.badge.confirmed { color:var(--ok); }
+.badge.rejected { color:var(--muted); }
+.badge.bound { color:var(--fail); }
+.badge.pass { color:var(--muted); }
+.dist { font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.dist.plus { color:var(--ok); }
+.dist.minus { color:var(--ink); }
+.dist.bound { color:var(--fail); }
+.sub { display:block; font-size:12px; color:var(--muted); }
+
+.worker { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; align-items:stretch; }
+.stagebox { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+.stagebox b { display:block; font-size:15px; }
+.stagebox span { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.stagebox.on { border-color:var(--ok); }
+.bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:8px; }
+.bar i { display:block; height:100%; background:var(--accent); width:0; }
+.note { margin-top:12px; padding:10px 12px; border-radius:7px; font-size:13px; white-space:pre-wrap;
+        background:color-mix(in srgb,var(--fail) 12%,transparent); color:var(--fail);
+        border:1px solid color-mix(in srgb,var(--fail) 30%,transparent); }
+.note.ok { background:color-mix(in srgb,var(--ok) 12%,transparent); color:var(--ok); border-color:color-mix(in srgb,var(--ok) 30%,transparent); }
+.note.warn { background:color-mix(in srgb,var(--warn) 12%,transparent); color:var(--warn); border-color:color-mix(in srgb,var(--warn) 30%,transparent); }
+[hidden] { display:none !important; }
+video { width:100%; border-radius:8px; background:#000; margin-top:12px; }
+</style>
+<script>
+// The theme is the user's choice, kept in this browser; the OS preference
+// only decides the first visit. Applied before paint to avoid a flash.
+(function () {
+  let theme = null;
+  try { theme = localStorage.getItem("tda.theme"); } catch (e) {}
+  if (theme !== "light" && theme !== "dark") {
+    theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+
+<header class="brand">
+  <div class="mark">
+    <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+      <defs><path id="gull" d="M -36 2 C -26 -9 -13 -11 -4 -4 C -2 -3 2 -3 4 -4 C 13 -11 26 -9 36 2 C 26 -3 14 -1 6 3 C 4.5 7 0 9.5 -3.5 8.5 C -6 7.5 -6 4.5 -6 3 C -14 -1 -26 -3 -36 2 Z"/></defs>
+      <circle cx="20" cy="20" r="19.5" fill="#fff"/>
+      <circle cx="20" cy="20" r="18.2" fill="#1f3a93"/>
+      <circle cx="20" cy="20" r="15.8" fill="none" stroke="#fff" stroke-width="1.1"/>
+      <g fill="#fff">
+        <use href="#gull" transform="translate(20.5 12.5) scale(0.30)"/>
+        <use href="#gull" transform="translate(20 20.3) scale(0.34)"/>
+        <use href="#gull" transform="translate(20 28) scale(0.34)"/>
+      </g>
+    </svg>
+    <div>
+      <div class="name">Precision Touchdown Analyzer</div>
+    </div>
+  </div>
+  <nav class="apps" aria-label="programs">
+    <a href="/">Capture</a>
+    <a href="/calibration">Calibration</a>
+    <a href="/viewer">Frames</a>
+    <a href="/landings" class="on">Landings</a>
+  </nav>
+  <button class="theme" id="themeBtn" type="button" aria-label="switch light / dark">☾</button>
+  <span class="dot" id="dot"><i></i><span id="dotText">connecting</span></span>
+</header>
+
+<div class="toolbar">
+  <label class="field">Session <select id="session"></select></label>
+  <span class="muted" id="calNote"></span>
+</div>
+
+<div class="note" id="err" hidden></div>
+
+<div class="cols">
+<div>
+  <section class="panel">
+    <h2>Touchdown <span class="mono" id="tdWhen"></span></h2>
+    <div id="stage">
+      <img id="shot" alt="contact frame">
+      <svg id="svg" viewBox="0 0 1920 1080"></svg>
+      <div id="lens"></div>
+    </div>
+    <input type="range" id="scrub" min="0" max="0" value="0" disabled>
+    <div class="scrubrow">
+      <button class="ghost" id="stepBack">&minus;1</button>
+      <button class="ghost" id="stepFwd">+1</button>
+      <button class="amber" id="toAuto" title="The frame where the estimator put the touchdown">automatic touchpoint</button>
+      <button class="ghost" id="toContact">overlay</button>
+      <button class="ghost" id="loop" title="Play the whole pass, over and over">&#9654; loop</button>
+      <button class="ghost active" id="lensBtn" title="Magnifier while hovering over the picture">&#128269; lens</button>
+      <select id="loopFps" style="width:auto" title="playback rate">
+        <option value="6">6 fps</option><option value="12" selected>12 fps</option><option value="20">20 fps</option><option value="30">30 fps</option>
+      </select>
+      <span class="muted keys"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> step &nbsp;<kbd>Shift</kbd> &times;10</span>
+    </div>
+    <div class="frameinfo" id="scrubInfo"><span class="hint">Select a landing.</span></div>
+
+    <div class="tiles">
+      <div class="tile big" id="tLonTile"><b id="tLon">&mdash;</b><span>longitudinal</span></div>
+      <div class="tile"><b id="tUnc">&mdash;</b><span>&plusmn; estimate</span></div>
+      <div class="tile"><b id="tLat">&mdash;</b><span>lateral</span></div>
+      <div class="tile"><b id="tSpeed">&mdash;</b><span>ground speed</span></div>
+      <div class="tile small"><b id="tMethod">&mdash;</b><span>cue</span></div>
+      <div class="tile small"><b id="tOutcome">&mdash;</b><span>outcome</span></div>
+    </div>
+    <ul class="flags" id="flags"></ul>
+
+    <div class="card" id="card" hidden>
+      <h3 id="cardTitle">Awaiting confirmation</h3>
+      <div class="ogn" id="ogn" hidden></div>
+      <div class="grid">
+        <div><label for="reg">Registration</label><input id="reg" placeholder="HB-3213" autocomplete="off" spellcheck="false"></div>
+        <div><label for="outcome">What happened</label>
+          <select id="outcome">
+            <option value="measured">touched down in view (measured)</option>
+            <option value="unseen">touched down in view, instant not found yet</option>
+            <option value="short">landed short of the window</option>
+            <option value="long">landed long, beyond the window</option>
+            <option value="on_ground">rolling / taxiing (not a landing)</option>
+            <option value="departure">take-off</option>
+            <option value="airborne">flew through</option>
+          </select></div>
+        <div><label for="note">Note</label><input id="note" placeholder="bounced, tail first, ..." autocomplete="off"></div>
+      </div>
+      <div class="row">
+        <button id="confirm">Confirm</button>
+        <button class="ghost" id="useFrame" title="Score the frame shown above instead of the automatic one">Use this frame</button>
+        <button class="ghost" id="resetFrame" title="Drop the judge's frame and score the automatic touchpoint again" hidden>Back to automatic</button>
+        <button class="ghost" id="saveEdit">Save changes</button>
+        <button class="danger" id="reject">Reject</button>
+        <button class="ghost" id="reopen" hidden>Reopen</button>
+        <span class="muted" id="cardHint"></span>
+      </div>
+    </div>
+
+    <video id="clip" controls preload="none" hidden></video>
+  </section>
+</div>
+
+<div>
+  <section class="panel">
+    <h2>Events &mdash; this session <span class="mono" id="counts"></span></h2>
+    <table>
+      <thead><tr><th>Time</th><th class="num">Offset</th><th>Aircraft</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="4" class="muted">No results yet. Start the analysis below.</td></tr></tbody>
+    </table>
+  </section>
+</div>
+</div>
+
+<section class="panel">
+  <h2>Analysis worker <span class="muted" id="workerHint"></span></h2>
+  <div class="worker">
+    <div class="stagebox" id="sbStage"><b id="wStage">idle</b><span>stage</span></div>
+    <div class="stagebox"><b id="wSeg" class="mono">&mdash;</b><span>segment</span><div class="bar"><i id="wBar"></i></div></div>
+    <div class="stagebox"><b id="wQueue">&mdash;</b><span>queued &middot; done</span></div>
+    <div class="stagebox"><b id="wTracks">&mdash;</b><span>tracks in frame</span></div>
+    <div class="stagebox"><b id="wCal">&mdash;</b><span>calibration</span></div>
+    <div class="stagebox"><b id="wOgn">&mdash;</b><span>ogn</span></div>
+  </div>
+  <div class="row">
+    <button id="analyse">Analyse session</button>
+    <button class="ghost" id="follow">Follow recording</button>
+    <button class="ghost" id="reanalyse">Re-analyse from scratch</button>
+    <button class="danger" id="stopWorker" disabled>Stop</button>
+    <button class="ghost" id="logbook">Fetch OGN logbook</button>
+    <span class="muted" id="workerMsg"></span>
+  </div>
+  <div class="note warn" id="workerErr" hidden></div>
+</section>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let session = "";
+let list = [];
+let current = null;      // the selected landing (full record)
+let frameIndex = null;   // frame currently shown (segment-local)
+let windowState = null;  // last /api/viewer/window response
+let showingOverlay = true;
+let busy = false;
+
+function escapeHtml(t) { const d = document.createElement("div"); d.textContent = t ?? ""; return d.innerHTML; }
+function showError(m) { $("err").hidden = !m; $("err").textContent = m || ""; }
+async function api(path, options) {
+  const r = await fetch(path, options);
+  let body = null;
+  try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((body && body.detail) || r.statusText);
+  return body;
+}
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+const clock = iso => iso ? new Date(iso).toLocaleTimeString([], { hour12: false }) : "";
+
+// ---- sessions --------------------------------------------------------------
+async function loadSessions() {
+  let recorded = [], analysed = [];
+  try { recorded = await api("/api/sessions"); } catch (e) { showError(e.message); return; }
+  try { analysed = await api("/api/landings"); } catch (e) {}
+  const names = [...new Set([...recorded.map(s => s.session), ...analysed])].sort().reverse();
+  const keep = session || names[0] || "";
+  $("session").innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  $("session").value = keep;
+  session = $("session").value;
+  await loadLandings();
+}
+$("session").addEventListener("change", async () => { session = $("session").value; current = null; await loadLandings(); });
+
+// ---- list ------------------------------------------------------------------
+async function loadLandings() {
+  if (!session) return;
+  try {
+    const r = await api(`/api/landings/${encodeURIComponent(session)}`);
+    list = r.landings;
+    $("counts").textContent = `${r.pending} pending · ${r.confirmed} confirmed`;
+  } catch (e) { list = []; }
+  renderList();
+  if (!current && list.length) {
+    const first = list.filter(x => x.kind === "landing" && x.status === "pending")[0]
+      || list.filter(x => x.kind === "landing")[0] || list[0];
+    if (first) await select(first.id);
+  } else if (current) {
+    const fresh = list.find(x => x.id === current.id);
+    if (fresh) { current = fresh; renderCard(); }
+  }
+}
+
+function distClass(x) {
+  if (x.outcome === "short" || x.outcome === "long") return "bound";
+  if (x.outcome !== "measured") return "";
+  return (x.scored_longitudinal_m ?? 0) >= 0 ? "plus" : "minus";
+}
+
+function renderList() {
+  // every event of the session, newest first - landings, take-offs, fly-throughs alike
+  const shown = list.slice().reverse();
+  if (!shown.length) {
+    $("rows").innerHTML = '<tr><td colspan="4" class="muted">Nothing here yet.</td></tr>';
+    return;
+  }
+  $("rows").innerHTML = shown.map(x => `
+    <tr data-id="${x.id}" class="${current && current.id === x.id ? "sel" : ""}">
+      <td class="mono">${clock(x.touchdown_utc || x.first_utc)}<span class="sub">${x.id}</span></td>
+      <td class="num"><span class="dist ${distClass(x)}">${escapeHtml(x.label)}</span>
+        ${x.outcome === "measured" && x.uncertainty_m ? `<span class="sub">&plusmn; ${x.uncertainty_m.toFixed(1)}</span>` : ""}</td>
+      <td>${x.registration ? `<b class="mono">${escapeHtml(x.registration)}</b>` : '<span class="muted">unknown</span>'}
+        <span class="sub">${escapeHtml(x.aircraft_type || "")}${x.identified_by ? " · " + x.identified_by : ""}${x.direction > 0 ? " · →" : " · ←"}</span></td>
+      <td>${badge(x)}</td>
+    </tr>`).join("");
+  for (const tr of $("rows").querySelectorAll("tr[data-id]")) {
+    tr.addEventListener("click", () => select(tr.dataset.id));
+  }
+}
+
+function badge(x) {
+  if (x.status === "confirmed") return '<span class="badge confirmed">confirmed</span>';
+  if (x.status === "rejected") return '<span class="badge rejected">rejected</span>';
+  if (x.outcome === "short" || x.outcome === "long") return '<span class="badge bound">out of range</span>';
+  if (x.outcome === "unseen") return '<span class="badge pending">pick frame</span>';
+  if (x.kind !== "landing") return '<span class="badge pass">' + escapeHtml(x.label) + '</span>';
+  return '<span class="badge pending">pending</span>';
+}
+
+// ---- one landing -----------------------------------------------------------
+async function select(id) {
+  try { current = await api(`/api/landings/${encodeURIComponent(session)}/${encodeURIComponent(id)}`); }
+  catch (e) { showError(e.message); return; }
+  showError("");
+  renderList();
+  renderCard();
+  showOverlay();
+}
+
+function renderCard() {
+  const x = current;
+  $("tdWhen").textContent = x.touchdown_utc ? new Date(x.touchdown_utc).toLocaleString() + (x.touchdown_utc.length > 19 ? "" : "") : "";
+  const lon = x.scored_longitudinal_m;
+  $("tLon").textContent = x.outcome === "measured" && lon != null ? (lon >= 0 ? "+" : "−") + Math.abs(lon).toFixed(1) + " m" : x.label;
+  $("tLonTile").className = "tile big" + (x.outcome === "measured" ? " ok" : (x.outcome === "short" || x.outcome === "long" ? " warn" : ""));
+  $("tUnc").textContent = x.uncertainty_m ? "± " + x.uncertainty_m.toFixed(2) + " m" : "—";
+  $("tLat").textContent = x.lateral_m != null ? x.lateral_m.toFixed(1) + " m" : "—";
+  $("tSpeed").textContent = x.speed_mps ? (x.speed_mps * 3.6).toFixed(0) + " km/h" : "—";
+  $("tMethod").textContent = x.method || "—";
+  $("tOutcome").textContent = x.outcome.replace("_", " ");
+  $("flags").innerHTML = (x.flags || []).map(f => `<li>${escapeHtml(f)}</li>`).join("");
+
+  const card = $("card");
+  card.hidden = false;
+  card.className = "card " + x.status;
+  $("cardTitle").textContent = x.status === "confirmed" ? "Confirmed" + (x.confirmed_utc ? " · " + clock(x.confirmed_utc) : "")
+    : x.status === "rejected" ? "Rejected" : "Awaiting confirmation";
+  $("reg").value = x.registration || "";
+  $("outcome").value = x.outcome === "unknown" ? "on_ground" : x.outcome;
+  $("confirm").disabled = x.outcome === "unseen";
+  $("confirm").title = x.outcome === "unseen" ? "Scrub to the contact frame and press Use this frame first" : "";
+  $("note").value = x.note || "";
+  const done = x.status !== "pending";
+  $("confirm").hidden = done; $("reject").hidden = done; $("reopen").hidden = !done;
+  $("useFrame").disabled = done;
+  $("resetFrame").hidden = done || x.confirmed_frame == null;
+  $("cardHint").textContent = x.confirmed_frame != null
+    ? `scored at frame ${x.confirmed_frame} (judge); automatic was frame ${x.frame}` +
+      (x.longitudinal_m != null ? ` = ${x.longitudinal_m >= 0 ? "+" : "−"}${Math.abs(x.longitudinal_m).toFixed(1)} m` : "")
+    : "";
+
+  const o = x.ogn;
+  $("ogn").hidden = !o;
+  if (o) {
+    $("ogn").innerHTML = `OGN ${escapeHtml(o.source)}: <b>${escapeHtml(o.registration || o.flarm_id || "?")}</b>` +
+      (o.competition_number ? " · " + escapeHtml(o.competition_number) : "") +
+      (o.aircraft_type ? " · " + escapeHtml(o.aircraft_type) : "") +
+      ` · p ${o.probability.toFixed(2)} · Δt ${o.dt_s.toFixed(0)} s` +
+      (o.distance_m != null ? ` · ${o.distance_m.toFixed(0)} m from the line` : "") +
+      (o.candidates > 1 ? ` · ${o.candidates} candidates` : "");
+  }
+
+  const clip = $("clip");
+  if (x.clip_path) { clip.hidden = false; clip.src = `/api/landings/${encodeURIComponent(session)}/${x.id}/clip.mp4?t=${Date.now()}`; }
+  else { clip.hidden = true; clip.removeAttribute("src"); }
+
+  // the scrubber spans the frames of the track in the contact segment
+  const seg = x.segment || (x.track[0] && x.track[0].segment);
+  const frames = x.track.filter(p => p.segment === seg).map(p => p.frame);
+  if (frames.length) {
+    $("scrub").min = Math.min(...frames); $("scrub").max = Math.max(...frames);
+    $("scrub").disabled = false;
+  } else { $("scrub").disabled = true; }
+}
+
+// The status strip under the scrubber: labelled chips, or a plain hint.
+function setInfo(chips, hint) {
+  const html = chips
+    .filter(c => c && c[1] != null && c[1] !== "")
+    .map(([k, v, cls]) => `<span>${k ? `<span class="k">${escapeHtml(k)}</span>` : ""}<span class="v ${cls || ""}">${escapeHtml(String(v))}</span></span>`)
+    .join("");
+  $("scrubInfo").innerHTML = html + (hint ? `<span class="hint">${escapeHtml(hint)}</span>` : "");
+}
+const signed = m => (m >= 0 ? "+" : "−") + Math.abs(m).toFixed(1) + " m";
+
+function showOverlay() {
+  stopLoop();
+  showingOverlay = true;
+  frameIndex = current.confirmed_frame ?? current.frame;
+  $("scrub").value = frameIndex ?? 0;
+  $("shot").src = current.overlay_path ? `/api/landings/${encodeURIComponent(session)}/${current.id}/overlay.jpg?t=${Date.now()}` : "";
+  $("svg").innerHTML = "";
+  setInfo([
+    ["view", "overlay"],
+    ["frame", frameIndex],
+    current.subframe != null ? ["contact", `frame ${current.subframe.toFixed(1)}`, "amber"] : null,
+    current.outcome === "measured" && current.scored_longitudinal_m != null ? ["offset", signed(current.scored_longitudinal_m), "amber"] : null,
+  ]);
+}
+
+// Show one frame of the extracted window: the picture, the geometry, the strip.
+function showFrame(frame, src, utc) {
+  const seg = current.segment || current.track[0].segment;
+  frameIndex = frame;
+  showingOverlay = false;
+  $("shot").src = src;
+  $("scrub").value = frame;
+  drawMarker(frame);
+  const p = current.track.find(q => q.segment === seg && q.frame === frame);
+  const lon = p ? (current.direction * p.world_x) : null;
+  const isAuto = current.outcome === "measured" && frame === current.frame;
+  setInfo([
+    ["frame", frame + (current.subframe != null ? ` / contact ${current.subframe.toFixed(1)}` : "")],
+    utc ? ["utc", utc.slice(11, 23)] : null,
+    lon != null ? ["wheel", signed(lon), isAuto ? "amber" : ""] : null,
+    p && p.reach_px != null ? ["shadow", `${p.reach_px} px`] : null,
+    p && p.tyre_seen === false ? ["", "tyre hidden – interpolated", "warn"] : null,
+    isAuto ? ["", "automatic touchpoint", "amber"] : null,
+    looping ? ["", "▶ loop"] : null,
+  ]);
+}
+
+async function goto(frame) {
+  if (!current || busy) return;
+  stopLoop();
+  const seg = current.segment || current.track[0].segment;
+  busy = true;
+  try {
+    windowState = await post("/api/viewer/window", { session, segment: seg, frame });
+    showFrame(windowState.frame, `/api/viewer/frame/${windowState.frame}.jpg`, windowState.utc);
+  } catch (e) { showError(e.message); }
+  finally { busy = false; }
+}
+
+// ---- loop the whole pass -----------------------------------------------------
+// The frames of the track are extracted into one window on the server and
+// pulled into the browser once (as blobs, so the no-store frame route is not
+// re-fetched every tick), then shown round and round.
+let looping = false, loopTimer = null, loopFrames = [], loopBlobs = new Map();
+
+function stopLoop() {
+  if (!looping) return;
+  looping = false;
+  clearInterval(loopTimer);
+  $("loop").innerHTML = "&#9654; loop";
+}
+
+async function startLoop() {
+  if (!current || busy) return;
+  const seg = current.segment || current.track[0].segment;
+  const frames = current.track.filter(q => q.segment === seg && !q.clipped).map(q => q.frame);
+  if (frames.length < 2) return;
+  const lo = Math.min(...frames), hi = Math.max(...frames);
+  busy = true;
+  $("loop").textContent = "loading…";
+  try {
+    const win = await post("/api/viewer/window", {
+      session, segment: seg, frame: Math.round((lo + hi) / 2), half: Math.min(180, Math.ceil((hi - lo) / 2) + 3),
+    });
+    windowState = win;
+    for (const [, url] of loopBlobs) URL.revokeObjectURL(url);
+    loopBlobs = new Map();
+    loopFrames = [];
+    for (let f = Math.max(lo, win.available[0]); f <= Math.min(hi, win.available[1]); f++) loopFrames.push(f);
+    await Promise.all(loopFrames.map(async f => {
+      const r = await fetch(`/api/viewer/frame/${f}.jpg`);
+      if (r.ok) loopBlobs.set(f, URL.createObjectURL(await r.blob()));
+    }));
+  } catch (e) { showError(e.message); $("loop").innerHTML = "&#9654; loop"; busy = false; return; }
+  busy = false;
+  looping = true;
+  $("loop").innerHTML = "&#9632; stop";
+  let i = 0;
+  const tick = () => {
+    const f = loopFrames[i];
+    i = (i + 1) % loopFrames.length;
+    if (loopBlobs.has(f)) showFrame(f, loopBlobs.get(f), null);
+  };
+  tick();
+  loopTimer = setInterval(tick, 1000 / Number($("loopFps").value));
+}
+
+$("loop").addEventListener("click", () => looping ? stopLoop() : startLoop());
+
+// ---- the magnifier ------------------------------------------------------------
+// The same lens as the frame viewer: 5x of the picture under the pointer.
+// Only the picture is magnified, not the drawn geometry, so the wheel can
+// be judged against the grass without lines in the way.
+(function () {
+  const shot = $("shot"), lens = $("lens"), ZOOM = 5, R = 95;
+  let enabled = true;
+  try { enabled = localStorage.getItem("tda.lens") !== "off"; } catch (e) {}
+  const paint = () => { $("lensBtn").classList.toggle("active", enabled); if (!enabled) lens.classList.remove("on"); };
+  paint();
+  $("lensBtn").addEventListener("click", () => {
+    enabled = !enabled;
+    try { localStorage.setItem("tda.lens", enabled ? "on" : "off"); } catch (e) {}
+    paint();
+  });
+  shot.addEventListener("mousemove", ev => {
+    if (!enabled || !shot.src) return;
+    const rect = shot.getBoundingClientRect();
+    const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+    lens.classList.add("on");
+    lens.style.left = (x - R) + "px";
+    lens.style.top = (y - R - 110) + "px";
+    lens.style.backgroundImage = `url("${shot.src}")`;
+    lens.style.backgroundSize = `${rect.width * ZOOM}px ${rect.height * ZOOM}px`;
+    lens.style.backgroundPosition = `${-x * ZOOM + R}px ${-y * ZOOM + R}px`;
+  });
+  shot.addEventListener("mouseleave", () => lens.classList.remove("on"));
+})();
+$("loopFps").addEventListener("change", () => { if (looping) { stopLoop(); startLoop(); } });
+
+// ---- the overlay geometry, drawn on every frame -----------------------------
+let inverse = null;  // ground (m) -> image (px) homography, from the calibration
+const WINDOW_M = 19.4, STRIP_HALF_M = 12;
+
+function groundToImage(x, y) {
+  if (!inverse) return null;
+  const m = inverse;
+  const w = m[2][0] * x + m[2][1] * y + m[2][2];
+  if (Math.abs(w) < 1e-9) return null;
+  return [(m[0][0] * x + m[0][1] * y + m[0][2]) / w, (m[1][0] * x + m[1][1] * y + m[1][2]) / w];
+}
+
+function svgLabel(x, y, text, size) {
+  const w = text.length * size * 0.62 + 14;
+  return `<rect x="${x - 6}" y="${y - size - 6}" width="${w}" height="${size + 12}" fill="#141414" opacity="0.85"/>` +
+         `<text x="${x}" y="${y}" font-family="ui-monospace,Consolas,monospace" font-size="${size}" font-weight="600" fill="#f5f5f5">${escapeHtml(text)}</text>`;
+}
+
+function geometry() {
+  // target line, measurement window edges, the headline - what the rendered
+  // overlay carries, so a scrubbed frame is never without them
+  let s = "";
+  for (const [xm, colour, width] of [[-WINDOW_M, "#f5f5f5", 1.5], [WINDOW_M, "#f5f5f5", 1.5], [0, "#f0b429", 4]]) {
+    const a = groundToImage(xm, -STRIP_HALF_M), b = groundToImage(xm, STRIP_HALF_M);
+    if (!a || !b) continue;
+    s += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${colour}" stroke-width="${width}"/>`;
+    if (xm === 0) s += svgLabel(Math.min(a[0], b[0]) + 8, Math.min(a[1], b[1]) - 12, "TARGET LINE", 20);
+  }
+  if (current) {
+    const unc = current.outcome === "measured" && current.uncertainty_m ? `  +/- ${current.uncertainty_m.toFixed(2)} m` : "";
+    s += svgLabel(24, 48, `${current.label}${unc}`, 34);
+    s += svgLabel(24, 84, `${current.id}  ${current.registration || "unknown"}  ${current.outcome}  (${current.method || "-"})`, 18);
+  }
+  return s;
+}
+
+function drawMarker(frame) {
+  const seg = current.segment || current.track[0].segment;
+  const p = current.track.find(q => q.segment === seg && q.frame === frame);
+  // the wheel's path: approach (airborne) in cyan up to the automatic
+  // touchpoint, ground run in green; clipped frames are not drawn
+  const whole = current.track.filter(q => q.segment === seg && !q.clipped);
+  const split = current.outcome === "measured" ? (current.subframe ?? current.frame) : Infinity;
+  const air = whole.filter(q => q.frame <= split), run = whole.filter(q => q.frame > split);
+  if (air.length && run.length) run.unshift(air[air.length - 1]);
+  const pts = q => q.map(z => `${z.u},${z.v}`).join(" ");
+  let s = geometry() +
+          `<polyline points="${pts(air)}" fill="none" stroke="#3cc8e6" stroke-width="2"/>` +
+          `<polyline points="${pts(run)}" fill="none" stroke="#6ec85a" stroke-width="2"/>`;
+  if (air.length >= 2) s += svgLabel(Math.max(8, Math.min(air[0].u, 1760)), Math.max(30, air[0].v - 26), "APPROACH", 18);
+  const auto = current.track.find(q => q.segment === seg && q.frame === current.frame);
+  if (auto && current.outcome === "measured") {
+    s += `<circle cx="${auto.u}" cy="${auto.v}" r="14" fill="none" stroke="#f0b429" stroke-width="2" stroke-dasharray="4 4"/>`;
+  }
+  if (p) {
+    // dashed when the tyre was not itself visible here and the point is interpolated
+    const dash = p.tyre_seen === false ? ' stroke-dasharray="6 5"' : "";
+    s += `<circle cx="${p.u}" cy="${p.v}" r="22" fill="none" stroke="#f0b429" stroke-width="3"${dash}/>
+          <line x1="${p.u - 34}" y1="${p.v}" x2="${p.u + 34}" y2="${p.v}" stroke="#f0b429" stroke-width="2"/>
+          <line x1="${p.u}" y1="${p.v - 34}" x2="${p.u}" y2="${p.v + 34}" stroke="#f0b429" stroke-width="2"/>`;
+  }
+  $("svg").innerHTML = s;
+}
+
+$("scrub").addEventListener("input", () => goto(Number($("scrub").value)));
+$("stepBack").addEventListener("click", () => goto((frameIndex ?? 0) - 1));
+$("stepFwd").addEventListener("click", () => goto((frameIndex ?? 0) + 1));
+$("toContact").addEventListener("click", showOverlay);
+$("toAuto").addEventListener("click", async () => {
+  // the frame the estimator measured, as a raw frame with the marker on it
+  // showFrame marks the strip "automatic touchpoint" for this frame itself
+  if (!current || current.frame == null) return;
+  await goto(current.frame);
+});
+$("resetFrame").addEventListener("click", async () => { await act("edit", { reset_frame: true }); showOverlay(); });
+document.addEventListener("keydown", e => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); goto((frameIndex ?? 0) - (e.shiftKey ? 10 : 1)); }
+  if (e.key === "ArrowRight") { e.preventDefault(); goto((frameIndex ?? 0) + (e.shiftKey ? 10 : 1)); }
+});
+
+// ---- the judge -------------------------------------------------------------
+async function act(path, body) {
+  if (!current) return;
+  showError("");
+  try {
+    current = await post(`/api/landings/${encodeURIComponent(session)}/${current.id}/${path}`, body);
+    await loadLandings();
+    renderCard();
+  } catch (e) { showError(e.message); }
+}
+$("confirm").addEventListener("click", async () => {
+  // Any change to the outcome is saved along with the confirmation.
+  if (current.outcome !== $("outcome").value) await act("edit", { outcome: $("outcome").value });
+  await act("confirm", { registration: $("reg").value, note: $("note").value });
+});
+$("reject").addEventListener("click", () => act("reject", { note: $("note").value }));
+$("reopen").addEventListener("click", () => act("reopen", {}));
+$("saveEdit").addEventListener("click", () => act("edit", {
+  registration: $("reg").value, outcome: $("outcome").value, note: $("note").value,
+}));
+$("useFrame").addEventListener("click", async () => {
+  if (frameIndex == null || showingOverlay) { $("cardHint").textContent = "Scrub to the contact frame first."; return; }
+  await act("edit", { frame: frameIndex });
+  showOverlay();
+});
+
+// ---- worker ----------------------------------------------------------------
+let lastLanding = null;
+let wasRunning = false;
+async function pollWorker() {
+  let s;
+  try { s = await api("/api/analysis/status"); $("dot").classList.remove("down"); }
+  catch (e) { $("dot").className = "dot down"; $("dotText").textContent = "server unreachable"; return; }
+  const running = !!s.running;
+  $("dot").className = "dot" + (running ? " live" : "");
+  $("dotText").textContent = running ? "analysing " + (s.session || "") : (s.available ? "idle" : "analysis unavailable");
+  $("wStage").textContent = s.stage || "idle";
+  $("sbStage").className = "stagebox" + (running ? " on" : "");
+  $("wSeg").textContent = s.segment || "—";
+  $("wBar").style.width = s.total_frames ? (100 * s.frame / s.total_frames).toFixed(0) + "%" : "0";
+  $("wQueue").textContent = s.session ? `${s.queue ?? 0} · ${s.done ?? 0}` : "—";
+  $("wTracks").textContent = running ? String(s.tracks_active ?? 0) : "—";
+  const cal = s.calibration;
+  $("wCal").textContent = cal ? `${cal.residual_m.toFixed(2)} m ${cal.acceptable ? "✓" : "(rough)"}` : "—";
+  const p = s.ogn && s.ogn.poller;
+  const f = s.ogn && s.ogn.field;
+  $("wOgn").textContent = p && p.running ? `${f.airfield} · ${p.fixes_logged} fixes` : (f && f.enabled ? `${f.airfield} · idle` : "off");
+  $("stopWorker").disabled = !running;
+  $("analyse").disabled = running || !s.available;
+  $("follow").disabled = running || !s.available;
+  $("reanalyse").disabled = running || !s.available;
+  $("workerErr").hidden = !(s.error || (!s.available && s.reason));
+  $("workerErr").textContent = s.error || s.reason || "";
+  $("workerHint").textContent = s.available ? (s.clips === false ? "clips off" : "") : "OpenCV is not installed on the server";
+  if (s.last_landing && s.last_landing !== lastLanding) { lastLanding = s.last_landing; if (s.session === session) await loadLandings(); }
+  if (wasRunning && !running && s.session === session) await loadLandings();
+  wasRunning = running;
+}
+
+async function startWorker(opts) {
+  showError("");
+  $("workerMsg").textContent = "";
+  try { await post("/api/analysis/start", { session, ...opts }); }
+  catch (e) { showError(e.message); }
+  pollWorker();
+}
+$("analyse").addEventListener("click", () => startWorker({ follow: false, fresh: false }));
+$("follow").addEventListener("click", () => startWorker({ follow: true, fresh: false }));
+$("reanalyse").addEventListener("click", () => {
+  if (confirm(`Discard every result, clip and overlay of ${session} and analyse it again?`)) startWorker({ follow: false, fresh: true });
+});
+$("stopWorker").addEventListener("click", async () => { try { await post("/api/analysis/stop"); } catch (e) { showError(e.message); } });
+$("logbook").addEventListener("click", async () => {
+  $("workerMsg").textContent = "fetching...";
+  try {
+    const r = await post(`/api/ogn/logbook/${encodeURIComponent(session)}`);
+    $("workerMsg").textContent = `${r.sorties} sortie(s) in the logbook, ${r.matched} landing(s) identified` + (r.note ? ` — ${r.note}` : "");
+    await loadLandings();
+  } catch (e) { $("workerMsg").textContent = ""; showError(e.message); }
+});
+
+api("/api/calibration").then(r => {
+  if (r && r.calibration && r.calibration.inverse) inverse = r.calibration.inverse;
+  $("calNote").textContent = r && r.calibration
+    ? `calibration ${r.calibration.residual_m.toFixed(2)} m${r.calibration.acceptable ? "" : " – above target, numbers are rough"}`
+    : "no calibration – analysis cannot run";
+}).catch(() => {});
+
+loadSessions();
+pollWorker();
+setInterval(pollWorker, 1000);
+setInterval(() => { if (!busy) loadLandings(); }, 10000);
+
+// ---- light / dark switch ------------------------------------------------------
+(function () {
+  const button = document.getElementById("themeBtn");
+  if (!button) return;
+  const paint = () => {
+    const dark = document.documentElement.dataset.theme === "dark";
+    button.textContent = dark ? "\u2600" : "\u263E";
+    button.title = dark ? "Switch to the white design" : "Switch to the black design";
+  };
+  paint();
+  button.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("tda.theme", next); } catch (e) {}
+    paint();
+  });
+})();
+</script>
+</body>
+</html>

@@ -203,7 +203,7 @@ is filled in server-side, and every log, manifest and API response shows it
 redacted — so this stays safe even with `--host 0.0.0.0`.
 
 ```powershell
-touchdown-analyzer probe --source rtsp://root:PASSWORD@192.168.200.189/axis-media/media.amp
+touchdown-analyzer probe --source rtsp://root:PASSWORD@192.168.200.222/axis-media/media.amp
 touchdown-analyzer probe          # same camera, from .env
 touchdown-analyzer record         # likewise
 ```
@@ -295,21 +295,89 @@ Frames are extracted a window at a time (±30 frames, half a second either way a
 60 fps) in one ffmpeg pass, so stepping is instant and re-centres transparently
 when you walk off the end.
 
-### Analysis (planned)
+### Analysis (implemented — M2/M3, first pass)
 
 ```powershell
-# one-time, per camera position: click the known ground markers in a still frame
-touchdown-analyzer calibrate --source rtsp://camera/stream --out config/calibration.json
+pip install -e ".[ui,analysis]"        # adds OpenCV (headless)
 
-# detect landings, cut clips, measure displacement
-touchdown-analyzer reprocess --session 2026-07-18
-
-# review and confirm registrations / touchdown frames in the browser
-touchdown-analyzer review --session 2026-07-18
-
-# export results
-touchdown-analyzer export --session 2026-07-18 --format csv
+# find every aircraft in a recorded session, measure where it touched down,
+# write an overlay image and cut a clip per landing
+touchdown-analyzer analyze --session 2026-09-13
+touchdown-analyzer analyze --session 2026-09-13 --fresh       # discard earlier results first
+touchdown-analyzer analyze --session 2026-09-13 --no-clips    # faster, overlays only
+touchdown-analyzer analyze --session 2026-09-13 --segment 2026-09-13_13-58-36.mp4
 ```
+
+Results go to `data/landings/<session>/`: `landings.json` (every track, its
+measurement, the fit details, the judge's decisions and a history of every
+change), one `<time>_<REG>_overlay.jpg` per landing (the contact frame with the
+target line, the wheel and the number drawn in — the picture that makes the
+number believable), and one `<time>_<REG>.mp4` clip (−3 s / +5 s around the
+touchdown, stream-copied from the raw segments). Until the aircraft is known
+the files are `..._UNKNOWN-<seq>`; confirming a registration renames them.
+
+The same analysis runs from the browser. **Landings** (`/landings` in the
+control UI) is the judge's page: the contact frame with the geometry drawn in,
+a scrubber to step through the track, the automatic number with its
+uncertainty, the cues that produced it, an OGN proposal for the aircraft when
+there is one, and *Confirm* / *Reject* / *Use this frame*. The list on the
+right is the session: time, offset, aircraft, status. At the bottom the
+analysis worker: *Analyse session* re-processes a finished session,
+*Follow recording* keeps analysing while the recorder runs — new segments are
+picked up as they close, and each landing appears in the list a few seconds
+after the aircraft has left the frame. Nothing here can cost the recorder a
+frame: the worker only reads the segment files.
+
+How the touchdown is found (details in `docs/design.md` §4.2 and §4.6):
+
+1. MOG2 background subtraction on a half-resolution frame finds the aircraft;
+   a small constant-velocity tracker follows it across segment boundaries.
+2. Inside the tracked box, at full resolution, the pixels are split into
+   **aircraft** and **shadow** against the background model (a shadow is a
+   darker copy of the background with the same chroma; a white fuselage, red
+   markings and the black tyre are not).
+3. The **main wheel** is the black tyre along the belly of the fuselage — found
+   directly in the luminance profile, which is far more reliable than any
+   silhouette geometry — and tracked as an object through the whole pass:
+   column and bottom row smoothed in time, a reading that jumps to another
+   dark part overruled, frames where the tyre is hidden interpolated (drawn
+   dashed on the page). The contact row is the bottom of the rubber, in every
+   frame.
+4. Two independent cues give the contact instant at sub-frame resolution:
+   the **shadow reach** (dark rows under the wheel before sunlit ground, which
+   shrinks as the wheel comes down and stops changing at contact) and the
+   **apparent depth** (the wheel pixel projected through the homography *as if
+   on the ground* — while airborne it lands too far away, and stops moving at
+   contact). Where both see a landing they are combined and their spread
+   becomes the uncertainty; where they disagree, the judge sees a flag.
+5. The wheel pixel at the contact instant goes through the calibration to
+   metres. Landings that touch down outside the window are reported as a
+   bound (`< −19 m`, `> +19 m`), take-offs and taxiing aircraft are listed but
+   not scored. A wheel that skims the whole window a hand's width up with no
+   shadow to read is reported as **pick frame**: the estimator cannot tell
+   that from rolling, and rather than guess it hands the judge the scrubber
+   (*automatic touchpoint* / *Use this frame*).
+
+What the first footage (13 Sept 2026, Bellechasse) taught, in short: the
+shadow is the best cue there is when the sun is out, and on a flat "greaser"
+flare the contact instant is genuinely soft — the two cues bracket it by
+10–20 frames, so expect ±3–6 m on such landings until the calibration is
+tightened (the current one has a 2.25 m residual against a 0.10 m target) and
+the mast goes up. Every number carries its own error estimate for this reason.
+
+### Identification (OGN)
+
+`config/ogn.json` names the airfield (LSTB) and its position. *Fetch OGN
+logbook* pulls the day from the **OGN FlightBook** (`flightbook.glidernet.org`,
+the same OGN data the club's flight log is built on): every aircraft's take-off
+and landing minute. A track is matched to the nearest event, which gives the
+registration *and* says whether that minute was a landing or a take-off — an
+aerotow leaving past the camera is listed as a take-off, not scored. On the
+test day this identified all 17 tracks (HB-3213, HB-3380, HB-3228, HB-1827,
+and the tug HB-ORW). While a recording runs the server also logs live OGN
+positions within 3 km to `ogn_fixes.jsonl` and matches on time, distance and
+height; KTrax is the fallback logbook for fields the FlightBook does not list.
+All of it is a proposal; the judge confirms.
 
 ## What a recording session produces
 
@@ -358,7 +426,7 @@ is normally larger, because ffmpeg writes out buffered frames before exiting.
 ```
 src/touchdown_analyzer/
     config.py             capture settings and camera targets
-    cli.py                probe | record | index | serve  (analysis verbs planned)
+    cli.py                probe | record | index | analyze | serve
     capture/              stdlib only - nothing here can fail to import
         ffmpeg.py         toolchain discovery and ffprobe wrappers
         probe.py          pre-flight camera check against docs/design.md 2.4
@@ -368,10 +436,24 @@ src/touchdown_analyzer/
         preview.py        MJPEG viewfinder relay
     calibration/
         homography.py     image plane -> ground plane, with degeneracy guards
+    analysis/             needs the [analysis] extra (OpenCV)
+        detect.py         MOG2 blobs, constant-velocity tracker
+        contact.py        aircraft/shadow split, the wheel, the shadow reach
+        touchdown.py      shadow and depth fits -> contact instant
+        pipeline.py       segments in, landing records out
+        overlay.py        the proof image
+        worker.py         background analysis while recording
+    clips/
+        cutter.py         ffmpeg clip cutting and naming (stdlib only)
+    identify/
+        ogn.py            OGN live feed, KTrax logbook, matching (stdlib only)
+    store/
+        landings.py       the landing record and the per-session store
     control/              browser UI; optional, needs the [ui] extra
         service.py        supervises recording, calibration, frames (stdlib only)
+        review.py         analysis worker, OGN, the judge's confirmations
         app.py            FastAPI routes
-        static/           capture control, calibration, frame viewer
+        static/           capture control, calibration, frame viewer, landings
 docs/design.md            architecture and implementation plan
 tools/site_geometry.py    camera coverage / resolution / error calculator
 tests/                    pytest test suite
@@ -394,11 +476,11 @@ Only small fixtures needed by the tests belong in `tests/data/`.
 
 | Milestone | Content |
 |-----------|---------|
-| M0 | Record a full flying day, collect 20–50 landings as a test set — *capture tooling built, footage outstanding* |
-| M1 | Calibration tool + verification against tape-measured ground points |
-| M2 | Feature 1: detection, landing segmentation, clip cutting |
-| M3 | Feature 2: touchdown estimation + validation vs. manual annotation |
-| M4 | Identification (OGN or start list) + review UI |
+| M0 | Record a full flying day, collect 20–50 landings as a test set — *capture tooling built; first 10 test clips recorded 13 Sept 2026* |
+| M1 | Calibration tool + verification against tape-measured ground points — *tool built; current calibration 2.25 m residual, needs a proper survey* |
+| M2 | Feature 1: detection, landing segmentation, clip cutting — *built* |
+| M3 | Feature 2: touchdown estimation + validation vs. manual annotation — *built (shadow + depth cues); validation set still to be annotated* |
+| M4 | Identification (OGN or start list) + review UI — *built; no OGN coverage at LSTB yet* |
 | M5 | Hardening for a full season of club use |
 
 ## Development
