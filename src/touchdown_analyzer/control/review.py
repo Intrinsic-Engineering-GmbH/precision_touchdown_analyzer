@@ -16,6 +16,7 @@ from touchdown_analyzer.clips import cutter
 from touchdown_analyzer.control.service import CaptureService, ServiceError
 from touchdown_analyzer.identify import ogn
 from touchdown_analyzer.store import landings as store_mod
+from touchdown_analyzer.store import scoring
 from touchdown_analyzer.store.landings import Landing, LandingStore
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class ReviewService:
         self._stores: dict[str, LandingStore] = {}
         self.field = ogn.load_field(self.config_dir)
         self._poller: ogn.Poller | None = None
+        self.rules = scoring.load(self.config_dir)
 
     # -- stores -------------------------------------------------------------
 
@@ -468,5 +470,29 @@ class ReviewService:
             "pending": sum(x.status == store_mod.PENDING and x.kind == "landing" for x in items),
             "confirmed": sum(x.status == store_mod.CONFIRMED for x in items),
             "rejected": sum(x.status == store_mod.REJECTED for x in items),
-            "landings": [x.to_dict() for x in items],
+            "landings": [self.scored(x) for x in items],
         }
+
+    # -- scoring --------------------------------------------------------------
+
+    def scored(self, landing: Landing) -> dict[str, Any]:
+        """The landing as the browser sees it, with its points under the rules."""
+        payload = landing.to_dict()
+        payload["score"] = (
+            None
+            if landing.status == store_mod.REJECTED
+            else self.rules.score(landing.scored_longitudinal_m, landing.outcome)
+        )
+        return payload
+
+    def save_rules(self, payload: dict[str, Any]) -> dict[str, Any]:
+        known = set(scoring.ScoringRules.__dataclass_fields__)
+        try:
+            rules = scoring.ScoringRules(**{k: v for k, v in payload.items() if k in known})
+        except TypeError as exc:
+            raise ServiceError(f"bad scoring rules: {exc}") from exc
+        if rules.max_points <= 0 or rules.short_per_m < 0 or rules.long_per_m < 0:
+            raise ServiceError("points must be positive and deductions not negative")
+        self.rules = rules
+        scoring.save(self.config_dir, rules)
+        return rules.as_dict()

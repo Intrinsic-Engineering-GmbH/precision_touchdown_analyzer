@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scoring &middot; Precision Touchdown Analyzer</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg:#f4f5f7; --panel:#fff; --ink:#14181f; --muted:#5d6672; --line:#d9dde3;
+  --accent:#1b5fbe; --ok:#127a4a; --warn:#9a6100; --fail:#b3261e; --amber:#c47f00; --live:#127a4a;
+  /* the brand bar */
+  --bar:#fff; --bar-ink:#14181f; --bar-muted:#5d6672; --bar-line:#d9dde3;
+  --bar-well:#eef0f3; --bar-hover:#e3e6ea; --bar-hover-ink:#14181f;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#14171c; --panel:#1c2027; --ink:#e8ebef; --muted:#98a2b0; --line:#2c323b;
+  --accent:#5b9bf5; --ok:#4cc38a; --warn:#e0a01e; --fail:#f26d68; --amber:#f0b429; --live:#4cc38a;
+  --bar:#151a22; --bar-ink:#e8ebef; --bar-muted:#98a2b0; --bar-line:#2a323d;
+  --bar-well:#0f1319; --bar-hover:#1f2733; --bar-hover-ink:#fff;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink);
+       font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.wrap { max-width:1180px; margin:0 auto; padding:16px 16px 64px; }
+a { color:var(--accent); }
+header.brand { display:flex; align-items:center; gap:22px; flex-wrap:wrap; margin:0 0 18px;
+               padding:12px 18px; border-radius:12px; background:var(--bar); color:var(--bar-ink);
+               border:1px solid var(--bar-line); }
+.brand .mark { display:flex; align-items:center; gap:12px; }
+.brand .name { font-size:16px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; line-height:1.15; }
+.brand .apps { display:inline-flex; gap:2px; padding:3px; border-radius:9px; background:var(--bar-well);
+               border:1px solid var(--bar-line); margin-left:auto; }
+.brand .apps a { display:inline-block; padding:7px 16px; border-radius:7px; font-size:13px; font-weight:600;
+                 letter-spacing:.03em; color:var(--bar-muted); text-decoration:none; }
+.brand .apps a:hover { color:var(--bar-hover-ink); background:var(--bar-hover); }
+.brand .apps a.on { color:#1a1200; background:#f0b429; }
+.brand .theme { font:inherit; font-size:15px; line-height:1; padding:7px 11px; border-radius:7px; cursor:pointer;
+                background:var(--bar-well); color:var(--bar-ink); border:1px solid var(--bar-line); }
+.brand .theme:hover { background:var(--bar-hover); color:var(--bar-hover-ink); }
+@media (max-width: 900px) { .brand .apps { margin-left:0; } }
+
+.cols { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; }
+@media (max-width: 900px) { .cols { grid-template-columns:1fr; } }
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+.panel > h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 12px;
+              display:flex; align-items:baseline; gap:10px; }
+.panel > h2 span { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:400; }
+.muted { color:var(--muted); font-size:13px; }
+.mono { font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-variant-numeric:tabular-nums; }
+label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+input, select { width:100%; padding:8px 10px; font:inherit; font-size:14px; color:var(--ink); background:var(--bg);
+                border:1px solid var(--line); border-radius:7px; }
+.grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }
+.wide { grid-column:1 / -1; }
+.row { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+button { font:inherit; font-weight:550; font-size:14px; padding:8px 16px; border-radius:7px;
+         border:1px solid transparent; cursor:pointer; background:var(--accent); color:#fff; }
+button.ghost { background:transparent; border-color:var(--line); color:var(--ink); }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.note { margin-top:12px; padding:10px 12px; border-radius:7px; font-size:13px; white-space:pre-wrap;
+        background:color-mix(in srgb,var(--fail) 12%,transparent); color:var(--fail);
+        border:1px solid color-mix(in srgb,var(--fail) 30%,transparent); }
+.note.ok { background:color-mix(in srgb,var(--ok) 12%,transparent); color:var(--ok); border-color:color-mix(in srgb,var(--ok) 30%,transparent); }
+[hidden] { display:none !important; }
+
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th, td { text-align:left; padding:7px 8px 7px 0; border-bottom:1px solid var(--line); }
+th { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:550; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+tr.line td { font-weight:600; color:var(--amber); }
+.score { font-weight:700; font-variant-numeric:tabular-nums; }
+.score.top { color:var(--ok); }
+.badge { display:inline-block; font-size:10px; font-weight:600; letter-spacing:.05em; text-transform:uppercase;
+         padding:2px 6px; border-radius:4px; border:1px solid currentColor; }
+.badge.pending { color:var(--amber); } .badge.confirmed { color:var(--ok); } .badge.rejected { color:var(--muted); }
+
+/* the scale drawn as a small chart */
+#chart { width:100%; height:220px; display:block; margin-top:6px; }
+#chart .axis { stroke:var(--line); stroke-width:1; }
+#chart .grid { stroke:var(--line); stroke-width:1; stroke-dasharray:3 4; }
+#chart .curve { fill:none; stroke:var(--accent); stroke-width:2.5; }
+#chart .target { stroke:var(--amber); stroke-width:2; }
+#chart text { fill:var(--muted); font-size:11px; font-family:ui-monospace,Consolas,monospace; }
+#chart .pt { fill:var(--ok); }
+</style>
+<script>
+(function () {
+  let theme = null;
+  try { theme = localStorage.getItem("tda.theme"); } catch (e) {}
+  if (theme !== "light" && theme !== "dark") {
+    theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+
+<header class="brand">
+  <div class="mark">
+    <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
+      <defs><path id="gull" d="M -36 2 C -26 -9 -13 -11 -4 -4 C -2 -3 2 -3 4 -4 C 13 -11 26 -9 36 2 C 26 -3 14 -1 6 3 C 4.5 7 0 9.5 -3.5 8.5 C -6 7.5 -6 4.5 -6 3 C -14 -1 -26 -3 -36 2 Z"/></defs>
+      <circle cx="20" cy="20" r="19.5" fill="#fff"/>
+      <circle cx="20" cy="20" r="18.2" fill="#1f3a93"/>
+      <circle cx="20" cy="20" r="15.8" fill="none" stroke="#fff" stroke-width="1.1"/>
+      <g fill="#fff">
+        <use href="#gull" transform="translate(20.5 12.5) scale(0.30)"/>
+        <use href="#gull" transform="translate(20 20.3) scale(0.34)"/>
+        <use href="#gull" transform="translate(20 28) scale(0.34)"/>
+      </g>
+    </svg>
+    <div><div class="name">Precision Touchdown Analyzer</div></div>
+  </div>
+  <nav class="apps" aria-label="programs">
+    <a href="/calibration">Calibration</a>
+    <a href="/">Capture</a>
+    <a href="/viewer">Frames</a>
+    <a href="/landings">Landings</a>
+    <a href="/scoring" class="on">Scoring</a>
+  </nav>
+  <button class="theme" id="themeBtn" type="button" aria-label="switch light / dark">&#9790;</button>
+</header>
+
+<div class="cols">
+<div>
+  <section class="panel">
+    <h2>Rules <span class="muted">saved in config/scoring.json</span></h2>
+    <div class="grid">
+      <div class="wide"><label for="name">Name of the rule set</label><input id="name" autocomplete="off"></div>
+      <div><label for="max">Points on the target line</label><input id="max" type="number" step="1" min="1"></div>
+      <div><label for="short">Deduction per metre <b>short</b> (pts/m)</label><input id="short" type="number" step="0.1" min="0"></div>
+      <div><label for="long">Deduction per metre <b>long</b> (pts/m)</label><input id="long" type="number" step="0.1" min="0"></div>
+      <div><label for="min">Minimum points for a measured landing</label><input id="min" type="number" step="1"></div>
+      <div><label for="oor">Points for a landing outside the window</label><input id="oor" type="number" step="1"></div>
+      <div><label for="dec">Decimals</label><select id="dec"><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></div>
+    </div>
+    <div class="row">
+      <button id="save">Save rules</button>
+      <button class="ghost" id="revert">Revert</button>
+      <span class="muted" id="msg"></span>
+    </div>
+    <div class="note" id="err" hidden></div>
+    <p class="muted" style="margin-bottom:0">
+      Score = points on the line &minus; deduction &times; |offset|, never below the minimum. Short and long
+      have their own deduction because a landing short of the line is usually punished harder than one
+      beyond it. Take-offs, fly-throughs and rejected events earn nothing.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>The scale</h2>
+    <svg id="chart" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+    <table style="margin-top:10px">
+      <thead><tr><th class="num">Offset</th><th class="num">Points</th><th class="num">Offset</th><th class="num">Points</th></tr></thead>
+      <tbody id="scale"></tbody>
+    </table>
+  </section>
+</div>
+
+<div>
+  <section class="panel">
+    <h2>Ranking <span><select id="session" style="width:auto"></select></span></h2>
+    <table>
+      <thead><tr><th class="num">#</th><th>Aircraft</th><th>Time</th><th class="num">Offset</th><th class="num">Points</th><th></th></tr></thead>
+      <tbody id="rank"><tr><td colspan="6" class="muted">No landings yet.</td></tr></tbody>
+    </table>
+    <p class="muted" style="margin-bottom:0">Confirmed landings are ranked; pending ones are shown with their provisional score below them.</p>
+  </section>
+</div>
+</div>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let rules = null;
+let session = "";
+
+function escapeHtml(t) { const d = document.createElement("div"); d.textContent = t ?? ""; return d.innerHTML; }
+function showError(m) { $("err").hidden = !m; $("err").textContent = m || ""; }
+async function api(path, options) {
+  const r = await fetch(path, options);
+  let body = null;
+  try { body = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((body && body.detail) || r.statusText);
+  return body;
+}
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+
+// The rule from the form, and the score it gives an offset.
+function formRules() {
+  return {
+    name: $("name").value, max_points: Number($("max").value), short_per_m: Number($("short").value),
+    long_per_m: Number($("long").value), min_points: Number($("min").value),
+    out_of_range_points: Number($("oor").value), decimals: Number($("dec").value),
+  };
+}
+function fillForm(r) {
+  $("name").value = r.name; $("max").value = r.max_points; $("short").value = r.short_per_m; $("long").value = r.long_per_m;
+  $("min").value = r.min_points; $("oor").value = r.out_of_range_points; $("dec").value = String(r.decimals);
+}
+function score(r, offset) {
+  const rate = offset < 0 ? r.short_per_m : r.long_per_m;
+  return Math.max(r.min_points, r.max_points - rate * Math.abs(offset));
+}
+const fmt = (r, v) => v.toFixed(r.decimals);
+const signed = m => (m >= 0 ? "+" : "−") + Math.abs(m).toFixed(1) + " m";
+
+function renderScale() {
+  const r = formRules();
+  const offsets = [-20, -15, -10, -5, -3, -2, -1, 0, 1, 2, 3, 5, 10, 15, 20];
+  const half = Math.ceil(offsets.length / 2);
+  let rows = "";
+  for (let i = 0; i < half; i++) {
+    const a = offsets[i], b = offsets[i + half];
+    const cell = o => o === undefined ? "<td></td><td></td>" :
+      `<td class="num mono">${signed(o)}</td><td class="num score${o === 0 ? " top" : ""}">${fmt(r, score(r, o))}</td>`;
+    rows += `<tr${a === 0 || b === 0 ? ' class="line"' : ""}>${cell(a)}${cell(b)}</tr>`;
+  }
+  $("scale").innerHTML = rows;
+
+  // chart: offset -20..+20 across, points 0..max up
+  const W = 600, H = 220, L = 44, R = 12, T = 12, B = 28;
+  const x = o => L + (o + 20) / 40 * (W - L - R);
+  const y = p => T + (1 - p / r.max_points) * (H - T - B);
+  let s = "";
+  for (const o of [-20, -10, 0, 10, 20]) s += `<line class="${o === 0 ? "target" : "grid"}" x1="${x(o)}" y1="${T}" x2="${x(o)}" y2="${H - B}"/><text x="${x(o)}" y="${H - 8}" text-anchor="middle">${o > 0 ? "+" : ""}${o} m</text>`;
+  for (const f of [0, 0.5, 1]) { const p = f * r.max_points; s += `<line class="grid" x1="${L}" y1="${y(p)}" x2="${W - R}" y2="${y(p)}"/><text x="${L - 6}" y="${y(p) + 4}" text-anchor="end">${fmt(r, p)}</text>`; }
+  s += `<line class="axis" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>`;
+  const pts = [];
+  for (let o = -20; o <= 20; o += 0.5) pts.push(`${x(o)},${y(score(r, o))}`);
+  s += `<polyline class="curve" points="${pts.join(" ")}"/>`;
+  for (const l of ranked) if (l.score != null && l.outcome === "measured" && l.scored_longitudinal_m != null) {
+    const o = Math.max(-20, Math.min(20, l.scored_longitudinal_m));
+    s += `<circle class="pt" cx="${x(o)}" cy="${y(Math.min(r.max_points, l.score))}" r="4"><title>${escapeHtml(l.registration || l.id)} ${signed(l.scored_longitudinal_m)} = ${l.score}</title></circle>`;
+  }
+  $("chart").innerHTML = s;
+}
+
+// ---- ranking ------------------------------------------------------------------
+let ranked = [];
+async function loadRanking() {
+  if (!session) { ranked = []; renderRanking(); return; }
+  try { ranked = (await api(`/api/landings/${encodeURIComponent(session)}`)).landings; } catch (e) { ranked = []; }
+  renderRanking();
+}
+function renderRanking() {
+  const r = formRules();
+  const scored = ranked.filter(l => l.kind === "landing" && l.status !== "rejected");
+  // live from the form, so the ranking follows the rules being edited
+  for (const l of scored) {
+    l.live = l.outcome === "measured" && l.scored_longitudinal_m != null ? score(r, l.scored_longitudinal_m)
+           : (l.outcome === "short" || l.outcome === "long") ? r.out_of_range_points : null;
+  }
+  const confirmed = scored.filter(l => l.status === "confirmed").sort((a, b) => (b.live ?? -1) - (a.live ?? -1));
+  const pending = scored.filter(l => l.status !== "confirmed").sort((a, b) => (b.live ?? -1) - (a.live ?? -1));
+  const row = (l, i) => `<tr>
+    <td class="num mono">${i != null ? i + 1 : ""}</td>
+    <td><b class="mono">${escapeHtml(l.registration || "unknown")}</b><span class="muted" style="display:block;font-size:12px">${escapeHtml(l.aircraft_type || l.id)}</span></td>
+    <td class="mono">${l.touchdown_utc ? new Date(l.touchdown_utc).toLocaleTimeString([], { hour12: false }) : ""}</td>
+    <td class="num mono">${escapeHtml(l.label)}</td>
+    <td class="num"><span class="score${l.live === r.max_points ? " top" : ""}">${l.live == null ? "—" : fmt(r, l.live)}</span></td>
+    <td><span class="badge ${l.status}">${l.status === "confirmed" ? "confirmed" : (l.outcome === "unseen" ? "pick frame" : "pending")}</span></td></tr>`;
+  const html = confirmed.map((l, i) => row(l, i)).join("") + pending.map(l => row(l, null)).join("");
+  $("rank").innerHTML = html || '<tr><td colspan="6" class="muted">No landings in this session yet.</td></tr>';
+  renderScale();
+}
+
+// ---- wiring -----------------------------------------------------------------------
+for (const id of ["max", "short", "long", "min", "oor", "dec"]) $(id).addEventListener("input", renderRanking);
+$("save").addEventListener("click", async () => {
+  showError(""); $("msg").textContent = "";
+  try { rules = await post("/api/scoring", formRules()); fillForm(rules); $("msg").textContent = "saved"; renderRanking(); }
+  catch (e) { showError(e.message); }
+});
+$("revert").addEventListener("click", () => { if (rules) { fillForm(rules); renderRanking(); $("msg").textContent = ""; } });
+$("session").addEventListener("change", async () => { session = $("session").value; await loadRanking(); });
+
+async function init() {
+  try { rules = await api("/api/scoring"); fillForm(rules); } catch (e) { showError(e.message); }
+  let names = [];
+  try { names = await api("/api/landings"); } catch (e) {}
+  $("session").innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("") || "<option value=''>no sessions</option>";
+  session = $("session").value;
+  await loadRanking();
+}
+init();
+
+// ---- light / dark switch ------------------------------------------------------
+(function () {
+  const button = document.getElementById("themeBtn");
+  const paint = () => {
+    const dark = document.documentElement.dataset.theme === "dark";
+    button.textContent = dark ? "☀" : "☾";
+    button.title = dark ? "Switch to the white design" : "Switch to the black design";
+  };
+  paint();
+  button.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("tda.theme", next); } catch (e) {}
+    paint();
+  });
+})();
+</script>
+</body>
+</html>

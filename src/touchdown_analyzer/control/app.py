@@ -115,6 +115,16 @@ class EditRequest(BaseModel):
     note: str | None = None
 
 
+class ScoringRequest(BaseModel):
+    max_points: float = Field(default=100.0, gt=0)
+    short_per_m: float = Field(default=5.0, ge=0)
+    long_per_m: float = Field(default=2.0, ge=0)
+    min_points: float = 0.0
+    out_of_range_points: float = 0.0
+    decimals: int = Field(default=0, ge=0, le=3)
+    name: str = "Club rules"
+
+
 class FieldRequest(BaseModel):
     airfield: str = ""
     lat: float = 0.0
@@ -200,29 +210,31 @@ def create_app(service: CaptureService, review: ReviewService | None = None) -> 
 
     @app.get("/api/landings/{session}/{landing_id}")
     async def landing(session: str, landing_id: str) -> dict[str, Any]:
-        return review.landing(session, landing_id).to_dict()
+        return review.scored(review.landing(session, landing_id))
 
     @app.post("/api/landings/{session}/{landing_id}/confirm")
     async def landing_confirm(
         session: str, landing_id: str, request: ConfirmRequest
     ) -> dict[str, Any]:
-        return review.confirm(
-            session, landing_id, registration=request.registration, note=request.note
-        ).to_dict()
+        return review.scored(
+            review.confirm(
+                session, landing_id, registration=request.registration, note=request.note
+            )
+        )
 
     @app.post("/api/landings/{session}/{landing_id}/reject")
     async def landing_reject(
         session: str, landing_id: str, request: RejectRequest
     ) -> dict[str, Any]:
-        return review.reject(session, landing_id, note=request.note).to_dict()
+        return review.scored(review.reject(session, landing_id, note=request.note))
 
     @app.post("/api/landings/{session}/{landing_id}/reopen")
     async def landing_reopen(session: str, landing_id: str) -> dict[str, Any]:
-        return review.reopen(session, landing_id).to_dict()
+        return review.scored(review.reopen(session, landing_id))
 
     @app.post("/api/landings/{session}/{landing_id}/edit")
     async def landing_edit(session: str, landing_id: str, request: EditRequest) -> dict[str, Any]:
-        return review.edit(
+        edited = review.edit(
             session,
             landing_id,
             registration=request.registration,
@@ -232,7 +244,8 @@ def create_app(service: CaptureService, review: ReviewService | None = None) -> 
             frame=request.frame,
             reset_frame=request.reset_frame,
             note=request.note,
-        ).to_dict()
+        )
+        return review.scored(edited)
 
     @app.get("/api/landings/{session}/{landing_id}/overlay.jpg", include_in_schema=False)
     async def landing_overlay(session: str, landing_id: str) -> FileResponse:
@@ -249,6 +262,18 @@ def create_app(service: CaptureService, review: ReviewService | None = None) -> 
         except ServiceError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return FileResponse(path, media_type="video/mp4")
+
+    @app.get("/scoring", include_in_schema=False)
+    async def scoring_page() -> FileResponse:
+        return FileResponse(STATIC / "scoring.html")
+
+    @app.get("/api/scoring")
+    async def scoring_rules() -> dict[str, Any]:
+        return review.rules.as_dict()
+
+    @app.post("/api/scoring")
+    async def scoring_save(request: ScoringRequest) -> dict[str, Any]:
+        return review.save_rules(request.model_dump())
 
     @app.get("/api/ogn")
     async def ogn_status() -> dict[str, Any]:

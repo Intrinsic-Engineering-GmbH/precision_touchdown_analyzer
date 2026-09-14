@@ -201,10 +201,11 @@ video { width:100%; border-radius:8px; background:#000; margin-top:12px; }
     </div>
   </div>
   <nav class="apps" aria-label="programs">
-    <a href="/">Capture</a>
     <a href="/calibration">Calibration</a>
+    <a href="/">Capture</a>
     <a href="/viewer">Frames</a>
     <a href="/landings" class="on">Landings</a>
+    <a href="/scoring">Scoring</a>
   </nav>
   <button class="theme" id="themeBtn" type="button" aria-label="switch light / dark">☾</button>
   <span class="dot" id="dot"><i></i><span id="dotText">connecting</span></span>
@@ -243,6 +244,7 @@ video { width:100%; border-radius:8px; background:#000; margin-top:12px; }
 
     <div class="tiles">
       <div class="tile big" id="tLonTile"><b id="tLon">&mdash;</b><span>longitudinal</span></div>
+      <div class="tile big ok" id="tScoreTile"><b id="tScore">&mdash;</b><span>points</span></div>
       <div class="tile"><b id="tUnc">&mdash;</b><span>&plusmn; estimate</span></div>
       <div class="tile"><b id="tLat">&mdash;</b><span>lateral</span></div>
       <div class="tile"><b id="tSpeed">&mdash;</b><span>ground speed</span></div>
@@ -388,7 +390,7 @@ function renderList() {
     <tr data-id="${x.id}" class="${current && current.id === x.id ? "sel" : ""}">
       <td class="mono">${clock(x.touchdown_utc || x.first_utc)}<span class="sub">${x.id}</span></td>
       <td class="num"><span class="dist ${distClass(x)}">${escapeHtml(x.label)}</span>
-        ${x.outcome === "measured" && x.uncertainty_m ? `<span class="sub">&plusmn; ${x.uncertainty_m.toFixed(1)}</span>` : ""}</td>
+        <span class="sub">${x.score != null ? `${x.score} pts` : ""}${x.outcome === "measured" && x.uncertainty_m ? ` &plusmn; ${x.uncertainty_m.toFixed(1)} m` : ""}</span></td>
       <td>${x.registration ? `<b class="mono">${escapeHtml(x.registration)}</b>` : '<span class="muted">unknown</span>'}
         <span class="sub">${escapeHtml(x.aircraft_type || "")}${x.identified_by ? " · " + x.identified_by : ""}${x.direction > 0 ? " · →" : " · ←"}</span></td>
       <td>${badge(x)}</td>
