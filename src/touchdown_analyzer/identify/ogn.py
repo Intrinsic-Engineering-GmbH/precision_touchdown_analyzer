@@ -59,6 +59,7 @@ class Field:
     """The airfield: where to look, and how far around it."""
 
     airfield: str = ""  # ICAO code, for the logbook
+    name: str = ""  # for people; "Bellechasse"
     lat: float = 0.0
     lon: float = 0.0
     elevation_m: float = 0.0
@@ -343,6 +344,49 @@ def parse_flightbook(payload: dict[str, Any]) -> list[Sortie]:
 def fetch_flightbook(field_: Field, day: date, *, timeout: float = 30.0) -> list[Sortie]:
     url = f"{FLIGHTBOOK_URL}/{urllib.parse.quote(field_.airfield)}/{day.isoformat()}"
     return parse_flightbook(json.loads(_get(url, timeout)))
+
+
+def parse_airfield(payload: dict[str, Any], previous: Field | None = None) -> Field | None:
+    """The airfield block of a FlightBook day: code, name, position, elevation, zone.
+
+    ``tz_offset`` reads like ``CEST+0200``. Settings that FlightBook does not
+    know (radius, enabled) are carried over from ``previous``.
+    """
+    block = payload.get("airfield") or {}
+    latlng = block.get("latlng") or []
+    if not block.get("code") or len(latlng) != 2:
+        return None
+    base = previous or Field()
+    offset = base.timezone_offset_h
+    tz = str(block.get("time_info", {}).get("tz_offset") or "")
+    if len(tz) >= 5 and tz[-5] in "+-" and tz[-4:].isdigit():
+        offset = (1 if tz[-5] == "+" else -1) * (int(tz[-4:-2]) + int(tz[-2:]) / 60)
+    return Field(
+        airfield=str(block["code"]).upper(),
+        name=str(block.get("name") or ""),
+        lat=float(latlng[0]),
+        lon=float(latlng[1]),
+        elevation_m=float(block.get("elevation") or 0.0),
+        radius_km=base.radius_km,
+        enabled=base.enabled,
+        timezone_offset_h=offset,
+    )
+
+
+def fetch_airfield(
+    code: str, previous: Field | None = None, *, timeout: float = 15.0
+) -> Field | None:
+    """Look an ICAO code up on the OGN FlightBook. None if it is not known there."""
+    code = code.strip().upper()
+    if not code:
+        return None
+    url = f"{FLIGHTBOOK_URL}/{urllib.parse.quote(code)}/{datetime.now(tz=UTC).date().isoformat()}"
+    try:
+        payload = json.loads(_get(url, timeout))
+    except (OSError, ValueError) as exc:
+        log.warning("airfield lookup failed for %s: %s", code, exc)
+        raise
+    return parse_airfield(payload, previous)
 
 
 def fetch_logbook(field_: Field, day: date, *, timeout: float = 30.0) -> list[Sortie]:

@@ -34,16 +34,28 @@
       "problemMatcher": []
     },
     {
-      // Default build task (Ctrl+Shift+B / Ctrl+Alt+B): starts the control web
-      // server and, with it, the CaptureService supervisor. Ctrl+C in the
-      // terminal panel stops it. F5 does the same under the debugger and also
-      // opens the browser.
+      // Default build task (Ctrl+Shift+B): the control window - start/stop
+      // the web server, service status, server log.
+      "label": "launcher",
+      "type": "shell",
+      "command": "${command:python.interpreterPath} -m touchdown_analyzer launcher",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "panel": "dedicated", "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      // Ctrl+Alt+B (user keybinding): starts the control web server directly
+      // and, with it, the CaptureService supervisor. Ctrl+C in the terminal
+      // panel stops it. F5 does the same under the debugger and also opens
+      // the browser.
       "label": "serve",
       "type": "shell",
       "command": "${command:python.interpreterPath} -m touchdown_analyzer serve",
       "options": { "cwd": "${workspaceFolder}" },
       "isBackground": true,
-      "group": { "kind": "build", "isDefault": true },
+      "group": "build",
       "presentation": { "panel": "dedicated", "reveal": "always", "focus": true },
       "problemMatcher": []
     }

@@ -9,6 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from touchdown_analyzer import paths
+
 # Common Windows install locations, checked after PATH.
 _WINDOWS_HINTS = (
     r"C:\Program Files\ffmpeg\bin",
@@ -42,6 +44,11 @@ def find_tool(name: str, override: str | None = None) -> str:
         if Path(override).is_file() or shutil.which(override):
             return override
         raise FfmpegNotFound(f"{name} not found at {override!r}")
+
+    # An installed copy may ship its own ffmpeg next to the program.
+    bundled = paths.bundled_tool(name)
+    if bundled is not None:
+        return str(bundled)
 
     found = shutil.which(name)
     if found:

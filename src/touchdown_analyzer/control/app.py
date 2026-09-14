@@ -127,6 +127,7 @@ class ScoringRequest(BaseModel):
 
 class FieldRequest(BaseModel):
     airfield: str = ""
+    name: str = ""
     lat: float = 0.0
     lon: float = 0.0
     elevation_m: float = 0.0
@@ -266,6 +267,11 @@ def create_app(service: CaptureService, review: ReviewService | None = None) -> 
     @app.get("/scoring", include_in_schema=False)
     async def scoring_page() -> FileResponse:
         return FileResponse(STATIC / "scoring.html")
+
+    @app.get("/board", include_in_schema=False)
+    async def board_page() -> FileResponse:
+        """The results for the big screen: read-only, refreshes itself."""
+        return FileResponse(STATIC / "board.html")
 
     @app.get("/api/scoring")
     async def scoring_rules() -> dict[str, Any]:

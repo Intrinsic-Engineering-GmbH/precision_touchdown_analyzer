@@ -11,3 +11,6 @@ mypy>=1.11
 fastapi>=0.110
 uvicorn>=0.29
 httpx>=0.27
+
+# Windows installer (packaging\windows\build.ps1).
+pyinstaller>=6.0

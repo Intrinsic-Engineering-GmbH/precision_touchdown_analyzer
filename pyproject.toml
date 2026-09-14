@@ -16,6 +16,9 @@ dependencies = ["numpy>=2.0"]
 [project.scripts]
 touchdown-analyzer = "touchdown_analyzer.cli:main"
 
+[project.gui-scripts]
+touchdown-analyzer-launcher = "touchdown_analyzer.launcher:main"
+
 [project.optional-dependencies]
 # The control UI. The recorder itself stays stdlib-only, so `record` keeps
 # working even if this is not installed.
@@ -46,6 +49,8 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 # The survey calculator predates the line limit; not worth reflowing.
 "tools/*" = ["E501"]
+# Embedded shell/systemd templates: long lines are the scripts' own.
+"packaging/debian/build_deb.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

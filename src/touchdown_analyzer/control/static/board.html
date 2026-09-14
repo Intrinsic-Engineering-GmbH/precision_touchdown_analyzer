@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results board &middot; Precision Touchdown Analyzer</title>
+<style>
+/* The board for the big screen: read from across the hangar, never touched.
+   Dark by default (a bright wall at night is unpleasant); ?theme=light or
+   the corner button switches. Everything scales with the viewport height. */
+:root {
+  color-scheme: dark;
+  --bg:#0d1117; --panel:#161b24; --ink:#eef1f5; --muted:#8b96a5; --line:#273040;
+  --ok:#4cc38a; --amber:#f0b429; --fail:#f26d68; --accent:#5b9bf5;
+  --u: 1vh;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:#f4f5f7; --panel:#fff; --ink:#14181f; --muted:#5d6672; --line:#d9dde3;
+  --ok:#127a4a; --amber:#c47f00; --fail:#b3261e; --accent:#1b5fbe;
+}
+* { box-sizing:border-box; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg); color:var(--ink); overflow:hidden;
+       font:calc(2.4 * var(--u))/1.3 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.board { display:flex; flex-direction:column; height:100%; padding:calc(2.5 * var(--u)) calc(3 * var(--u)); gap:calc(1.6 * var(--u)); }
+
+header { display:flex; align-items:center; gap:calc(2.4 * var(--u)); }
+header svg { width:calc(7 * var(--u)); height:calc(7 * var(--u)); flex:none; }
+header .name { font-size:calc(2.2 * var(--u)); font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+header .session { font-size:calc(4.2 * var(--u)); font-weight:750; letter-spacing:-.01em; line-height:1.1; }
+header .right { margin-left:auto; text-align:right; }
+header .rules { font-size:calc(2 * var(--u)); color:var(--muted); }
+header .live { display:inline-flex; align-items:center; gap:.5em; font-size:calc(1.9 * var(--u)); color:var(--muted); margin-top:.3em; }
+header .live i { width:.6em; height:.6em; border-radius:50%; background:var(--ok); box-shadow:0 0 .6em var(--ok); }
+header .live.stale i { background:var(--fail); box-shadow:none; }
+
+main { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr); gap:calc(2 * var(--u)); }
+section { background:var(--panel); border:1px solid var(--line); border-radius:calc(1.4 * var(--u));
+          padding:calc(1.6 * var(--u)) calc(2.2 * var(--u)); min-height:0; display:flex; flex-direction:column; }
+section h2 { margin:0 0 calc(1 * var(--u)); font-size:calc(1.9 * var(--u)); font-weight:650; letter-spacing:.09em; text-transform:uppercase; color:var(--muted);
+             display:flex; align-items:baseline; }
+section h2 span { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:400; }
+.rows { flex:1; min-height:0; overflow:hidden; }
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:calc(.9 * var(--u)) calc(.8 * var(--u)); border-bottom:1px solid var(--line); white-space:nowrap; }
+th { font-size:calc(1.6 * var(--u)); text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; }
+td { font-size:calc(2.6 * var(--u)); }
+tr:last-child td { border-bottom:0; }
+.num { text-align:right; font-variant-numeric:tabular-nums; }
+.mono { font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-variant-numeric:tabular-nums; }
+td.rank { color:var(--muted); font-weight:600; width:2.2em; }
+td.reg { font-weight:750; }
+td.reg small { display:block; font-size:calc(1.6 * var(--u)); font-weight:400; color:var(--muted); line-height:1.1; }
+td.points { font-weight:800; font-size:calc(3.2 * var(--u)); }
+td.count { font-weight:700; }
+tr.p1 td.rank { color:var(--amber); }
+.offset.short { color:var(--fail); } .offset.long { color:var(--accent); } .offset.line { color:var(--ok); }
+/* one chip per landing: time, offset, points */
+td.each { white-space:normal; width:100%; }
+.chip { display:inline-flex; align-items:baseline; gap:.5em; margin:.15em .6em .15em 0; padding:.15em .6em; border-radius:.5em;
+        background:color-mix(in srgb, var(--ink) 7%, transparent); font-size:calc(1.9 * var(--u)); font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; }
+.chip .t { color:var(--muted); }
+.chip b { font-weight:800; }
+.chip.top b { color:var(--ok); }
+.chip.more { color:var(--muted); background:transparent; border:1px dashed var(--line); }
+td.wait { color:var(--amber); font-size:calc(2 * var(--u)); font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+.empty { color:var(--muted); font-size:calc(2.4 * var(--u)); padding:calc(2 * var(--u)) 0; }
+.pages { font-size:calc(1.6 * var(--u)); color:var(--muted); text-align:right; margin-top:calc(.6 * var(--u)); min-height:1.2em; }
+
+footer { display:flex; gap:calc(2 * var(--u)); align-items:center; font-size:calc(1.7 * var(--u)); color:var(--muted); }
+footer .legend { display:flex; gap:calc(2.4 * var(--u)); }
+footer .legend b { font-weight:600; }
+footer .corner { margin-left:auto; display:flex; gap:.6em; opacity:0; transition:opacity .3s; }
+body.awake footer .corner { opacity:1; }
+footer .corner a, footer .corner button { font:inherit; color:var(--muted); background:transparent; border:1px solid var(--line);
+       border-radius:.5em; padding:.3em .8em; cursor:pointer; text-decoration:none; }
+body.asleep { cursor:none; }
+[hidden] { display:none !important; }
+</style>
+<script>
+(function () {
+  const q = new URLSearchParams(location.search).get("theme");
+  let theme = q;
+  if (!theme) { try { theme = localStorage.getItem("tda.board.theme"); } catch (e) {} }
+  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+})();
+</script>
+</head>
+<body>
+<div class="board">
+
+<header>
+  <svg viewBox="0 0 40 40" aria-hidden="true">
+    <defs><path id="gull" d="M -36 2 C -26 -9 -13 -11 -4 -4 C -2 -3 2 -3 4 -4 C 13 -11 26 -9 36 2 C 26 -3 14 -1 6 3 C 4.5 7 0 9.5 -3.5 8.5 C -6 7.5 -6 4.5 -6 3 C -14 -1 -26 -3 -36 2 Z"/></defs>
+    <circle cx="20" cy="20" r="19.5" fill="#fff"/>
+    <circle cx="20" cy="20" r="18.2" fill="#1f3a93"/>
+    <circle cx="20" cy="20" r="15.8" fill="none" stroke="#fff" stroke-width="1.1"/>
+    <g fill="#fff">
+      <use href="#gull" transform="translate(20.5 12.5) scale(0.30)"/>
+      <use href="#gull" transform="translate(20 20.3) scale(0.34)"/>
+      <use href="#gull" transform="translate(20 28) scale(0.34)"/>
+    </g>
+  </svg>
+  <div>
+    <div class="name">Precision Touchdown Analyzer</div>
+    <div class="session" id="title">Spot landing results</div>
+  </div>
+  <div class="right">
+    <div class="rules" id="rules"></div>
+    <div class="live" id="live"><i></i><span id="liveText">connecting…</span></div>
+  </div>
+</header>
+
+<main id="main">
+  <section>
+    <h2>Results <span id="resultsCount"></span></h2>
+    <div class="rows" id="resultsBox">
+      <table>
+        <thead><tr><th class="num">#</th><th>Aircraft</th><th class="num">Landings</th><th>Each landing</th><th class="num">Total</th></tr></thead>
+        <tbody id="results"></tbody>
+      </table>
+      <div class="empty" id="resultsEmpty" hidden>No confirmed landings yet.</div>
+    </div>
+    <div class="pages" id="resultsPages"></div>
+  </section>
+  <section>
+    <h2>Awaiting the judge <span id="pendingCount"></span></h2>
+    <div class="rows" id="pendingBox">
+      <table>
+        <thead><tr><th>Aircraft</th><th>Time</th><th></th></tr></thead>
+        <tbody id="pending"></tbody>
+      </table>
+      <div class="empty" id="pendingEmpty" hidden>Nothing to verify.</div>
+    </div>
+    <div class="pages" id="pendingPages"></div>
+  </section>
+</main>
+
+<footer>
+  <div class="legend">
+    <span><b>Total</b> = the points of all confirmed landings of the aircraft added up</span>
+    <span><b>Offset</b> from the target line, − short · + long</span>
+  </div>
+  <div class="corner">
+    <a href="/landings">judge</a>
+    <button type="button" id="themeBtn">light / dark</button>
+    <button type="button" id="fullBtn">full screen</button>
+  </div>
+</footer>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const REFRESH_MS = Number(params.get("refresh") || 5) * 1000;
+const PAGE_MS = Number(params.get("page") || 8) * 1000;
+let session = params.get("session") || "";
+let rules = null;
+let landings = [];
+let lastOk = 0;
+let page = { results: 0, pending: 0 };
+
+function escapeHtml(t) { const d = document.createElement("div"); d.textContent = t ?? ""; return d.innerHTML; }
+async function api(path) {
+  const r = await fetch(path, { cache: "no-store" });
+  if (!r.ok) throw new Error(r.statusText);
+  return r.json();
+}
+const fmtPoints = v => v.toFixed(rules ? rules.decimals : 0);
+const time = utc => utc ? new Date(utc).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "";
+const sessionTitle = s => {
+  const d = new Date(s);
+  return isNaN(d) ? s : d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+};
+
+// Each aircraft's confirmed landings summed up, best total first; the
+// unverified landings one by one in order of touchdown. An aircraft without a
+// registration cannot be summed, so each of those stands alone.
+function split() {
+  const shown = landings.filter(l => l.kind === "landing" && l.status !== "rejected");
+  const byTime = (a, b) => (a.touchdown_utc || a.first_utc || "").localeCompare(b.touchdown_utc || b.first_utc || "");
+  const groups = new Map();
+  for (const l of shown.filter(l => l.status === "confirmed").sort(byTime)) {
+    const key = l.registration || `#${l.id}`;
+    if (!groups.has(key)) groups.set(key, { key, registration: l.registration, competition_number: l.competition_number, aircraft_type: l.aircraft_type, landings: [], total: 0 });
+    const g = groups.get(key);
+    g.landings.push(l);
+    g.total += l.score ?? 0;
+    // the newest names the aircraft, should OGN have learnt more about it
+    if (l.competition_number) g.competition_number = l.competition_number;
+    if (l.aircraft_type) g.aircraft_type = l.aircraft_type;
+  }
+  const ranked = [...groups.values()].sort((a, b) => b.total - a.total || b.landings.length - a.landings.length || a.key.localeCompare(b.key));
+  const pending = shown.filter(l => l.status !== "confirmed").sort(byTime);
+  return { ranked, pending };
+}
+
+function offsetText(l) {
+  if (l.outcome !== "measured" || l.scored_longitudinal_m == null) return `<span class="offset">${escapeHtml(l.label)}</span>`;
+  const m = l.scored_longitudinal_m;
+  const cls = Math.abs(m) < 0.05 ? "line" : m < 0 ? "short" : "long";
+  return `<span class="offset ${cls}">${m < 0 ? "−" : "+"}${Math.abs(m).toFixed(1)} m</span>`;
+}
+function aircraftCell(l) {
+  const sub = [l.competition_number, l.aircraft_type].filter(Boolean).join(" · ");
+  return `<td class="reg mono">${escapeHtml(l.registration || "unknown")}${sub ? `<small>${escapeHtml(sub)}</small>` : ""}</td>`;
+}
+const EACH_SHOWN = 4;
+function eachCell(g) {
+  const shown = g.landings.slice(-EACH_SHOWN);
+  const chips = shown.map(l => `<span class="chip${rules && l.score === rules.max_points ? " top" : ""}">
+      <span class="t">${time(l.touchdown_utc).slice(0, 5)}</span>${offsetText(l)}<b>${l.score == null ? "—" : fmtPoints(l.score)}</b></span>`);
+  const more = g.landings.length - shown.length;
+  return `<td class="each">${more > 0 ? `<span class="chip more">+${more} earlier</span>` : ""}${chips.join("")}</td>`;
+}
+const resultRow = (g, i) => `<tr class="${i === 0 ? "p1" : ""}">
+  <td class="num rank mono">${i + 1}</td>${aircraftCell(g)}
+  <td class="num count mono">${g.landings.length}</td>${eachCell(g)}
+  <td class="num points mono">${fmtPoints(g.total)}</td></tr>`;
+const pendingRow = l => `<tr>${aircraftCell(l)}<td class="mono">${time(l.touchdown_utc || l.first_utc)}</td><td class="wait">${l.outcome === "unseen" ? "judge picks frame" : "being verified"}</td></tr>`;
+
+// How many rows fit: lay them all out, count those inside the box (rows differ
+// in height - an aircraft with many landings takes several lines), then show
+// that many per page and turn pages.
+function fit(box, tbody) {
+  const bottom = box.getBoundingClientRect().bottom;
+  let n = 0;
+  for (const row of tbody.querySelectorAll("tr")) {
+    if (row.getBoundingClientRect().bottom > bottom + 1) break;
+    n++;
+  }
+  return Math.max(1, n);
+}
+function paint(key, items, render, box, tbody, pagesEl, emptyEl) {
+  if (emptyEl) emptyEl.hidden = items.length > 0;
+  if (!items.length) { tbody.innerHTML = ""; pagesEl.textContent = ""; return; }
+  tbody.innerHTML = items.map((l, i) => render(l, i)).join("");
+  const per = fit(box, tbody);
+  const pages = Math.max(1, Math.ceil(items.length / per));
+  page[key] = page[key] % pages;
+  const start = page[key] * per;
+  tbody.innerHTML = items.slice(start, start + per).map((l, i) => render(l, start + i)).join("");
+  pagesEl.textContent = pages > 1 ? `page ${page[key] + 1} of ${pages}` : "";
+}
+function render() {
+  const { ranked, pending } = split();
+  const n = ranked.reduce((s, g) => s + g.landings.length, 0);
+  $("resultsCount").textContent = n ? `${n} confirmed landing${n === 1 ? "" : "s"} · ${ranked.length} aircraft` : "";
+  $("pendingCount").textContent = pending.length ? `${pending.length}` : "";
+  paint("results", ranked, resultRow, $("resultsBox"), $("results"), $("resultsPages"), $("resultsEmpty"));
+  paint("pending", pending, pendingRow, $("pendingBox"), $("pending"), $("pendingPages"), $("pendingEmpty"));
+}
+
+async function refresh() {
+  try {
+    if (!params.get("session")) {
+      // follow the newest session - the board just stays on for the day
+      const names = await api("/api/landings");
+      session = names[0] || "";
+    }
+    rules = await api("/api/scoring");
+    landings = session ? (await api(`/api/landings/${encodeURIComponent(session)}`)).landings : [];
+    lastOk = Date.now();
+    $("title").textContent = session ? sessionTitle(session) : "Spot landing results";
+    $("rules").textContent = rules ? `${rules.name || "scoring"} · ${rules.max_points} pts on the line` : "";
+  } catch (e) {
+    // keep showing what we had; the dot goes red below
+  }
+  const stale = Date.now() - lastOk > 3 * REFRESH_MS;
+  $("live").classList.toggle("stale", stale);
+  $("liveText").textContent = lastOk ? (stale ? "connection lost - showing last results" : "live · " + new Date(lastOk).toLocaleTimeString([], { hour12: false })) : "connecting…";
+  render();
+}
+
+function turnPages() {
+  page.results++; page.pending++;
+  render();
+}
+
+// ---- chrome that stays out of the way ---------------------------------------------
+let awakeTimer = null;
+function wake() {
+  document.body.classList.add("awake"); document.body.classList.remove("asleep");
+  clearTimeout(awakeTimer);
+  awakeTimer = setTimeout(() => { document.body.classList.remove("awake"); document.body.classList.add("asleep"); }, 4000);
+}
+document.addEventListener("mousemove", wake);
+document.addEventListener("keydown", wake);
+$("themeBtn").addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("tda.board.theme", next); } catch (e) {}
+});
+$("fullBtn").addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {});
+});
+window.addEventListener("resize", render);
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+setInterval(turnPages, PAGE_MS);
+setTimeout(wake, 0);
+</script>
+</body>
+</html>

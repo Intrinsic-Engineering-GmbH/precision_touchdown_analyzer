@@ -11,6 +11,8 @@ __pycache__/
 /dist/
 /sdist/
 /wheels/
+/packaging/out/
+/vendor/
 /develop-eggs/
 /eggs/
 /.eggs/

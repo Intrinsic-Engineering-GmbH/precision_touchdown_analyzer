@@ -233,10 +233,67 @@ def test_logbook_matches_a_landing_or_a_takeoff_and_says_which() -> None:
 
 
 def test_field_config_round_trip(tmp_path: Path) -> None:
-    field = ogn.Field(airfield="LSTB", lat=46.9769, lon=7.1269, enabled=True)
+    field = ogn.Field(airfield="LSTB", name="Bellechasse", lat=46.9769, lon=7.1269, enabled=True)
     ogn.save_field(tmp_path, field)
     assert ogn.load_field(tmp_path) == field
     assert ogn.load_field(tmp_path / "missing") == ogn.Field()
+    # a config written before the name existed still loads
+    (tmp_path / ogn.CONFIG_NAME).write_text(json.dumps({"airfield": "LSTB", "lat": 46.9}))
+    assert ogn.load_field(tmp_path) == ogn.Field(airfield="LSTB", lat=46.9)
+
+
+AIRFIELD_DAY = {
+    "airfield": {
+        "code": "lstb",
+        "country": "CH",
+        "elevation": 432,
+        "latlng": [46.97932, 7.1328],
+        "name": "Bellechasse",
+        "time_info": {"tz_name": "Europe/Zurich", "tz_offset": "CEST+0200"},
+    },
+    "code": "LSTB",
+    "devices": [],
+    "flights": [],
+}
+
+
+def test_airfield_lookup_fills_position_and_keeps_local_settings() -> None:
+    previous = ogn.Field(airfield="LSTB", radius_km=5.0, enabled=True, timezone_offset_h=9.0)
+    found = ogn.parse_airfield(AIRFIELD_DAY, previous)
+    assert found == ogn.Field(
+        airfield="LSTB",
+        name="Bellechasse",
+        lat=46.97932,
+        lon=7.1328,
+        elevation_m=432.0,
+        radius_km=5.0,
+        enabled=True,
+        timezone_offset_h=2.0,
+    )
+    # unknown zone format: the previous offset stays
+    odd = json.loads(json.dumps(AIRFIELD_DAY))
+    odd["airfield"]["time_info"]["tz_offset"] = "?"
+    assert ogn.parse_airfield(odd, previous).timezone_offset_h == 9.0  # type: ignore[union-attr]
+    west = json.loads(json.dumps(AIRFIELD_DAY))
+    west["airfield"]["time_info"]["tz_offset"] = "PDT-0730"
+    assert ogn.parse_airfield(west).timezone_offset_h == -7.5  # type: ignore[union-attr]
+    # unknown field: FlightBook answers without coordinates
+    assert ogn.parse_airfield({"airfield": {"code": "XXXX"}}) is None
+    assert ogn.parse_airfield({}) is None
+
+
+def test_airfield_fetch_uses_todays_flightbook_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    urls = []
+
+    def fake_get(url: str, timeout: float) -> str:
+        urls.append(url)
+        return json.dumps(AIRFIELD_DAY)
+
+    monkeypatch.setattr(ogn, "_get", fake_get)
+    found = ogn.fetch_airfield(" lstb ")
+    assert found is not None and found.name == "Bellechasse"
+    assert urls[0].startswith(f"{ogn.FLIGHTBOOK_URL}/LSTB/20")
+    assert ogn.fetch_airfield("") is None and len(urls) == 1
 
 
 # --------------------------------------------------------------------------
@@ -307,6 +364,54 @@ def test_reject_and_reopen(client: TestClient) -> None:
     )
     assert client.post("/api/landings/2026-09-13/L0001/reopen").json()["status"] == "pending"
     assert client.get("/api/landings/2026-09-13/L0009").status_code == 409
+
+
+# --------------------------------------------------------------------------
+# scoring
+# --------------------------------------------------------------------------
+
+
+def test_scoring_rules_deduct_short_and_long_differently(tmp_path: Path) -> None:
+    from touchdown_analyzer.store import scoring
+
+    rules = scoring.ScoringRules(max_points=100, short_per_m=5, long_per_m=2, min_points=0)
+    assert rules.score(0.0, "measured") == 100
+    assert rules.score(-4.0, "measured") == 80  # short: 5 pts/m
+    assert rules.score(4.0, "measured") == 92  # long: 2 pts/m
+    assert rules.score(-30.0, "measured") == 0  # never below the floor
+    assert rules.score(None, "short") == 0 and rules.score(None, "long") == 0
+    assert rules.score(1.0, "departure") is None and rules.score(None, "unseen") is None
+    rules.decimals = 1
+    assert rules.score(-1.25, "measured") == 93.8
+    scoring.save(tmp_path, rules)
+    assert scoring.load(tmp_path) == rules
+    assert scoring.load(tmp_path / "missing") == scoring.ScoringRules()
+
+
+def test_scores_come_with_the_landings_and_rules_can_be_changed(client: TestClient) -> None:
+    body = client.get("/api/landings/2026-09-13/L0001").json()
+    # -1.9 m short under the default rules: 100 - 5 * 1.9 = 90.5, rounded to 0 decimals
+    assert body["score"] == 90
+    r = client.post(
+        "/api/scoring",
+        json={"max_points": 1000, "short_per_m": 50, "long_per_m": 20, "decimals": 0},
+    )
+    assert r.status_code == 200 and r.json()["max_points"] == 1000
+    assert client.get("/api/scoring").json()["short_per_m"] == 50
+    assert client.get("/api/landings/2026-09-13/L0001").json()["score"] == 905
+    assert (
+        client.get("/api/landings/2026-09-13/L0002").json()["score"] is None
+    )  # rolling, not scored
+    assert client.post("/api/scoring", json={"max_points": -1}).status_code == 422
+    assert client.get("/scoring").status_code == 200
+
+
+def test_board_page_is_served(client: TestClient) -> None:
+    r = client.get("/board")
+    assert r.status_code == 200 and "Results board" in r.text
+    # the board reads what the judge's page reads: the landings with a score
+    first = client.get("/api/landings/2026-09-13").json()["landings"][0]
+    assert {"status", "kind", "score", "label", "scored_longitudinal_m"} <= set(first)
 
 
 def test_analysis_refuses_without_calibration(client: TestClient) -> None:

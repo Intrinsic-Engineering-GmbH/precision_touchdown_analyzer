@@ -6,6 +6,7 @@ import argparse
 import logging
 import signal
 import socket
+import sys
 import threading
 from collections.abc import Sequence
 from datetime import date
@@ -127,7 +128,24 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=DEFAULT_PORT)
     web.set_defaults(func=cmd_serve)
 
+    gui = sub.add_parser(
+        "launcher",
+        help="control window: start / stop the server, watch the services",
+        description="A small desktop window that runs the web server and shows what the "
+        "recorder, the analysis worker and the OGN poller are doing.",
+    )
+    gui.add_argument("--autostart", action="store_true", help="start the server right away")
+    gui.set_defaults(func=cmd_launcher)
+
     return parser
+
+
+def cmd_launcher(args: argparse.Namespace) -> int:
+    from touchdown_analyzer import launcher
+
+    if args.autostart and "--autostart" not in sys.argv:
+        sys.argv.append("--autostart")
+    return launcher.run()
 
 
 def resolve_source(given: str | None) -> str:
