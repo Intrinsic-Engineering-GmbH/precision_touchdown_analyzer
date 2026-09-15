@@ -62,8 +62,8 @@ touchdown-analyzer serve            # http://localhost:8080
 touchdown-analyzer serve --host 0.0.0.0   # reachable from the field WiFi (no login - trusted networks only)
 ```
 
-| Program Description |
-|---|---|
+| Program | Description |
+| --- | --- |
 | **Calibration** | Once per camera position: grab a still, click the surveyed markers (three pairs, one on each strip edge), solve. Aim for a residual under 0.10 m. |
 | **Capture** | Pre-flight check of the camera, start/stop the recording, live viewfinder, disk and frame-rate status. |
 | **Frames** | Step through a segment frame by frame and hand-mark a touchdown (the ground truth the analysis is scored against). |
