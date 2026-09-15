@@ -1,12 +1,12 @@
 # Precision Touchdown Analyzer
 
-Measures glider spot landings from one fixed camera: where the main wheel first
+Measures airplane spot landings from one fixed camera: where the main wheel first
 touched the ground, in metres from the target line, with a clip and a proof
 image per landing, an aircraft identification from OGN, and points under the
 club's scoring rules. Built for the Ziellandewettbewerb at LSTB (Bellechasse).
 
 The camera films the touchdown zone continuously. A recorder writes the stream
-to disk in 10 s segments; the analyzer reads those segments, finds every
+to disk in 10 s segments (configurable); the analyzer reads those segments, finds every
 aircraft, tracks its wheel to the instant of contact and maps that pixel onto
 the ground plane through a one-time calibration. A judge confirms each landing
 in the browser.
@@ -14,8 +14,7 @@ in the browser.
 ## Install
 
 **Windows** - run `PTA-Setup-<version>.exe`. It installs for all users to
-`C:\Program Files\PTA` (Windows asks for administrator rights when you press
-*Install*), adds Start menu and desktop shortcuts and an entry in *Apps &
+`C:\Program Files\PTA`, adds Start menu and desktop shortcuts and an entry in *Apps &
 features*. The setup asks for a **data folder** - recordings, results and the
 configuration; default `C:\Users\<you>\PTA`, put it on the disk with room for
 video - which the uninstaller leaves alone. A folder under your own profile
@@ -49,7 +48,7 @@ pip install -e ".[ui,analysis]"
 ## Run
 
 The installed program opens a **control window**: start and stop the web
-server, choose the port and whether the field WiFi may reach it, set the
+server, choose the port and whether a internet access is available, set the
 airfield for OGN identification (type the ICAO code, *Look up* fetches
 position, elevation and time zone from the OGN FlightBook, *Save* writes
 `config/ogn.json` and hands it to the running server), and watch the services -
@@ -63,10 +62,7 @@ touchdown-analyzer serve            # http://localhost:8080
 touchdown-analyzer serve --host 0.0.0.0   # reachable from the field WiFi (no login - trusted networks only)
 ```
 
-In VS Code, **F5** or **Ctrl+Alt+B** does the same. The browser UI has five
-programs:
-
-| Program | What you do there |
+| Program Description |
 |---|---|
 | **Calibration** | Once per camera position: grab a still, click the surveyed markers (three pairs, one on each strip edge), solve. Aim for a residual under 0.10 m. |
 | **Capture** | Pre-flight check of the camera, start/stop the recording, live viewfinder, disk and frame-rate status. |
@@ -87,7 +83,7 @@ touchdown-analyzer analyze --session 2026-09-13 [--fresh] [--no-clips]
 The camera URL is given once with `--source` (or in the UI) and remembered in
 `.env`, which is git-ignored because it carries the camera password.
 
-## What comes out
+## What comes out as results
 
 ```
 data/raw/<session>/         10 s segments, session.json, segments.jsonl, recorder.log
@@ -103,7 +99,7 @@ window are reported as a bound (`< −19 m`, `> +19 m`); a wheel that skims the
 whole window too low to tell from rolling is reported as *pick frame* for the
 judge; take-offs and fly-throughs are listed but not scored.
 
-## Where the numbers come from
+## Algorithm description
 
 Background subtraction finds the aircraft; inside its box the pixels are split
 into aircraft and shadow; the black tyre is found along the belly and tracked
@@ -117,7 +113,7 @@ taught are in [`docs/design.md`](docs/design.md).
 
 Accuracy today is limited by the calibration (2.25 m residual against a 0.10 m
 target) and a low tripod; a proper survey and the planned 8 m mast are what
-bring it to the ±0.3 m the design is built for.
+bring it to ±0.25 m the design is built for.
 
 ## Development
 
@@ -142,6 +138,3 @@ python packaging\debian\build_deb.py    # downloads the wheels from PyPI, writes
 The .deb is assembled with the standard library and has so far only been
 checked structurally on Windows; the first install on a real Debian machine
 should be watched (`journalctl -u pta`).
-
-Filming at the airfield records people as well as aircraft: agree on signage, a
-retention period for raw footage and who may access it before the first session.
