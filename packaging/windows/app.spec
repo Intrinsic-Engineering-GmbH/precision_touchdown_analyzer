@@ -9,7 +9,8 @@ Produces build/dist/PTA/ with two executables that
 share one set of libraries: PTA.exe (windowed: the
 control window; with arguments it runs the CLI, which is how it starts its
 own server) and touchdown-analyzer.exe (a console for terminal use).
-ffmpeg.exe / ffprobe.exe are bundled from vendor/ffmpeg/ when present.
+ffmpeg.exe / ffprobe.exe (and their licence) are bundled from vendor/ffmpeg/
+when present - build.ps1 fills that directory with fetch_ffmpeg.py.
 """
 
 import sys
@@ -27,7 +28,7 @@ datas = [
     (str(OUT / "icon.png"), "."),
     (str(OUT / "icon.ico"), "."),
 ]
-for tool in ("ffmpeg.exe", "ffprobe.exe"):
+for tool in ("ffmpeg.exe", "ffprobe.exe", "LICENSE-ffmpeg.txt"):
     candidate = ROOT / "vendor" / "ffmpeg" / tool
     if candidate.is_file():
         datas.append((str(candidate), "tools"))

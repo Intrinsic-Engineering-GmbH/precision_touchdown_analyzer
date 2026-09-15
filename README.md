@@ -13,22 +13,29 @@ in the browser.
 
 ## Install
 
-**Windows** - run `PTA-Setup-<version>.exe`. It installs per user (no
-administrator rights) to `%LOCALAPPDATA%\Programs\PTA`, adds Start menu and
-desktop shortcuts and an entry in *Apps & features*. Recordings, results and
-the configuration go to `%LOCALAPPDATA%\PTA` and survive an uninstall.
-Unattended: `PTA-Setup-<version>.exe /S [/D=C:\path]`.
+**Windows** - run `PTA-Setup-<version>.exe`. It installs for all users to
+`C:\Program Files\PTA` (Windows asks for administrator rights when you press
+*Install*), adds Start menu and desktop shortcuts and an entry in *Apps &
+features*. The setup asks for a **data folder** - recordings, results and the
+configuration; default `C:\Users\<you>\PTA`, put it on the disk with room for
+video - which the uninstaller leaves alone. A folder under your own profile
+installs per user, without the prompt. Unattended:
+`PTA-Setup-<version>.exe /S [/D=C:\path] [/DATA=D:\path] [/NODESKTOP] [/NOMENU]`.
 
 **Debian / Ubuntu** (amd64, Python 3.12 or 3.13):
 
 ```sh
-sudo apt install ./pta_<version>_amd64.deb
-sudo systemctl enable --now pta      # web server on port 8080, data in /var/lib/pta
+sudo apt install ./pta_<version>_amd64.deb   # asks for the data directory (default /var/lib/pta)
+sudo systemctl enable --now pta              # web server on port 8080
+sudo dpkg-reconfigure pta                    # point it at another data directory later
 ```
 
 The package carries its wheels and builds a venv under `/opt/pta` on install,
 so no network is needed on the target machine; `ffmpeg` is a dependency. The
-control window is in the application menu and as `pta` on the command line.
+data directory is kept in `/etc/default/pta` and belongs to the system user
+`pta`, which runs the service; the account that ran the install is added to
+group `pta` so the control window (application menu, or `pta` on the command
+line) works on the same recordings after the next login.
 
 **From source** - Python 3.12+, [ffmpeg](https://ffmpeg.org/) on `PATH`:
 
@@ -128,7 +135,7 @@ Raw video and results stay out of git.
 Building the installers (outputs land in `dist/`):
 
 ```powershell
-.\packaging\windows\build.ps1           # PyInstaller -> Setup exe; put ffmpeg.exe/ffprobe.exe in vendor\ffmpeg\ to bundle them
+.\packaging\windows\build.ps1           # PyInstaller -> Setup exe; downloads ffmpeg into vendor\ffmpeg\ and bundles it (-NoFfmpeg to skip)
 python packaging\debian\build_deb.py    # downloads the wheels from PyPI, writes the .deb (works on Windows too)
 ```
 

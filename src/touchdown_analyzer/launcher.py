@@ -519,7 +519,7 @@ def main() -> int:
     if args and args[0] == "--uninstall":
         from touchdown_analyzer import winstall
 
-        return winstall.uninstall_interactive(silent="--silent" in args)
+        return winstall.uninstall_main(args[1:])
     if args:
         from touchdown_analyzer.cli import main as cli_main
 

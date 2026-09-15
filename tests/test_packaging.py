@@ -22,6 +22,7 @@ def _load(name: str, relative: str) -> Any:
     spec = importlib.util.spec_from_file_location(name, ROOT / relative)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # dataclasses (3.14) look the module up by name
     spec.loader.exec_module(module)
     return module
 
@@ -64,6 +65,26 @@ def test_frozen_data_home_is_per_user(monkeypatch: pytest.MonkeyPatch, tmp_path:
         assert home == tmp_path / "xdg" / "pta"
 
 
+def test_installed_data_home_comes_from_the_program_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv(paths.ENV_HOME, raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "app" / "x.exe"))
+    (tmp_path / "app").mkdir()
+    assert paths.configured_home() is None
+    (tmp_path / "app" / paths.HOME_FILE).write_text(f"{tmp_path / 'store'}\n", encoding="utf-8")
+    assert paths.configured_home() == tmp_path / "store"
+    assert paths.data_home() == tmp_path / "store"
+    # the environment still wins over the installer's choice
+    monkeypatch.setenv(paths.ENV_HOME, str(tmp_path / "env"))
+    assert paths.data_home() == tmp_path / "env"
+    # an empty file counts as "not configured"
+    monkeypatch.delenv(paths.ENV_HOME)
+    (tmp_path / "app" / paths.HOME_FILE).write_text(" \n", encoding="utf-8")
+    assert paths.configured_home() is None
+
+
 def test_bundled_tool_next_to_program(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(tmp_path / "x.exe"))
@@ -81,6 +102,8 @@ def test_shortcut_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "me"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "programdata"))
+    monkeypatch.setenv("PUBLIC", str(tmp_path / "public"))
     both = winstall.shortcut_paths(desktop=True, start_menu=True)
     assert [p.name for p in both] == [f"{paths.APP_TITLE}.lnk"] * 2
     assert (
@@ -88,7 +111,52 @@ def test_shortcut_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     )
     assert both[1].parent == tmp_path / "me" / "Desktop"
     assert winstall.shortcut_paths(desktop=False, start_menu=False) == []
-    assert winstall.default_install_dir() == tmp_path / "local" / "Programs" / "PTA"
+    machine = winstall.shortcut_paths(desktop=True, start_menu=True, scope="machine")
+    assert (
+        machine[0].parent
+        == tmp_path / "programdata" / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    )
+    assert machine[1].parent == tmp_path / "public" / "Desktop"
+
+
+def test_default_folders(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "Program Files"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "Users" / "me"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    assert winstall.default_install_dir() == tmp_path / "Program Files" / "PTA"
+    assert winstall.default_data_dir() == tmp_path / "Users" / "me" / "PTA"
+    assert winstall.user_install_dir() == tmp_path / "local" / "Programs" / "PTA"
+
+
+def test_writable_probes_the_nearest_existing_ancestor(tmp_path: Path) -> None:
+    assert winstall.writable(tmp_path / "new" / "deeper")
+    (tmp_path / "file").write_text("x")
+    assert not winstall.writable(tmp_path / "file")
+
+
+def test_setup_options_round_trip_through_the_silent_command_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "pf"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "me"))
+    setup = _load("setup_wizard", "packaging/windows/setup_wizard.py")
+    defaults = setup.parse([])
+    assert not defaults.silent
+    assert defaults.install_dir == tmp_path / "pf" / "PTA"
+    assert defaults.data_dir == tmp_path / "me" / "PTA"
+    assert defaults.desktop and defaults.start_menu
+    chosen = setup.Options(
+        tmp_path / "Program Files" / "PTA",
+        tmp_path / "Recordings" / "PTA",
+        desktop=False,
+        start_menu=True,
+        silent=True,
+        log=tmp_path / "setup.log",
+    )
+    assert setup.parse(chosen.argv()) == chosen
+    # quoting as the shell may deliver it, case-insensitive switches
+    parsed = setup.parse(["/s", f'/d="{tmp_path / "x"}"', "/nomenu"])
+    assert parsed.silent and parsed.install_dir == tmp_path / "x" and not parsed.start_menu
 
 
 # --- the icon ------------------------------------------------------------
@@ -164,8 +232,32 @@ def test_control_tar_holds_the_maintainer_scripts() -> None:
     with tarfile.open(fileobj=io.BytesIO(deb.control_tar(1234, "md5  a\n"))) as tar:
         members = {m.name: m for m in tar.getmembers()}
         control = tar.extractfile("./control").read().decode()  # type: ignore[union-attr]
-    assert set(members) == {"./control", "./md5sums", "./postinst", "./prerm", "./postrm"}
-    assert all(members[f"./{s}"].mode == 0o755 for s in ("postinst", "prerm", "postrm"))
+        templates = tar.extractfile("./templates").read().decode()  # type: ignore[union-attr]
+    assert set(members) == {
+        "./control",
+        "./md5sums",
+        "./templates",
+        "./config",
+        "./postinst",
+        "./prerm",
+        "./postrm",
+    }
+    assert all(members[f"./{s}"].mode == 0o755 for s in ("config", "postinst", "prerm", "postrm"))
+    assert "debconf" in control
     assert f"Package: {deb.PACKAGE}" in control
     assert "Installed-Size: 1234" in control
     assert "Architecture: amd64" in control
+    assert f"Template: {deb.PACKAGE}/data_dir" in templates
+    assert f"Default: {deb.DATA_DIR}" in templates
+
+
+def test_maintainer_scripts_agree_on_the_defaults_file() -> None:
+    deb = _load("build_deb", "packaging/debian/build_deb.py")
+    for script in (deb.CONFIG, deb.POSTINST, deb.POSTRM, deb.SERVE, deb.WRAPPER):
+        assert deb.DEFAULTS_FILE in script
+    assert f"EnvironmentFile=-{deb.DEFAULTS_FILE}" in deb.SERVICE
+    assert f"ExecStart={deb.PREFIX}/bin/serve" in deb.SERVICE
+    assert "WorkingDirectory" not in deb.SERVICE  # the serve wrapper changes directory
+    # the f-strings must have produced plain shell, not leftover braces
+    assert "${TOUCHDOWN_ANALYZER_HOME:=" + deb.DATA_DIR + "}" in deb.SERVE
+    assert "{{" not in deb.SERVE and "{{" not in deb.POSTINST

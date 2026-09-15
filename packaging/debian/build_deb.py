@@ -11,10 +11,14 @@ What the package does on that box (see the maintainer scripts below):
   3.13 (Ubuntu 24.04 / Debian 13) under /opt/pta/wheels
 * postinst creates a virtual environment from the system python3 and
   installs those wheels offline - no PyPI access needed at the field
-* installs a systemd unit (pta.service, disabled by default)
-  that serves on 0.0.0.0:8080 with data under /var/lib/pta,
-  and a desktop entry for the control window
-* depends on ffmpeg, python3 (>= 3.12), python3-venv, python3-tk
+* asks, through debconf, where recordings, results and configuration
+  go (default /var/lib/pta; ``dpkg-reconfigure pta`` to change it) and
+  writes the answer to /etc/default/pta as TOUCHDOWN_ANALYZER_HOME
+* installs a systemd unit (pta.service, disabled by default) that serves
+  on 0.0.0.0:8080 from that directory as the system user ``pta``, and a
+  desktop entry for the control window; the user who ran the install is
+  added to group ``pta`` so the control window can use the same directory
+* depends on ffmpeg, python3 (>= 3.12), python3-venv, python3-tk, debconf
 
     python packaging/debian/build_deb.py            # -> dist/*.deb
     python packaging/debian/build_deb.py --no-download   # reuse build/wheels
@@ -49,7 +53,7 @@ Version: {__version__}
 Section: video
 Priority: optional
 Architecture: amd64
-Depends: python3 (>= 3.12), python3-venv, python3-tk, ffmpeg
+Depends: python3 (>= 3.12), python3-venv, python3-tk, ffmpeg, debconf (>= 0.5) | debconf-2.0
 Recommends: ntp | chrony
 Installed-Size: {{size_kb}}
 Maintainer: Intrinsic Engineering GmbH <f.m.schaad@gmail.com>
@@ -62,22 +66,99 @@ Description: Precision Touchdown Analyzer - glider spot-landing measurement
  .
  The web server runs as the pta systemd service (disabled by
  default; enable it with systemctl enable --now pta) or from
- the "Precision Touchdown Analyzer" desktop entry.
+ the "Precision Touchdown Analyzer" desktop entry. The data directory
+ is asked at installation and kept in /etc/default/pta.
+"""
+
+DEFAULTS_FILE = f"/etc/default/{PACKAGE}"
+
+TEMPLATES = f"""Template: {PACKAGE}/data_dir
+Type: string
+Default: {DATA_DIR}
+Description: Directory for recordings, results and configuration:
+ The Precision Touchdown Analyzer keeps the raw video segments it records,
+ the measured landings with their clips, and its configuration below this
+ directory. Raw video is large; choose a disk with room for it.
+ .
+ The directory is created if it does not exist and handed to the system
+ user "pta", which runs the web server. Change it later with
+ "dpkg-reconfigure {PACKAGE}".
+
+Template: {PACKAGE}/data_dir_invalid
+Type: error
+Description: The data directory must be an absolute path
+ Enter a full path starting with "/", for example {DATA_DIR}.
+"""
+
+# The debconf config script: runs before unpacking (apt) and again on
+# dpkg-reconfigure. A value already in /etc/default/pta (hand-edited or
+# from a previous run) is what the question starts from.
+CONFIG = f"""#!/bin/sh
+set -e
+. /usr/share/debconf/confmodule
+
+if [ -r "{DEFAULTS_FILE}" ]; then
+  TOUCHDOWN_ANALYZER_HOME=
+  . "{DEFAULTS_FILE}"
+  if [ -n "$TOUCHDOWN_ANALYZER_HOME" ]; then
+    db_set {PACKAGE}/data_dir "$TOUCHDOWN_ANALYZER_HOME"
+  fi
+fi
+
+attempts=0
+while [ $attempts -lt 3 ]; do
+  attempts=$((attempts + 1))
+  db_input high {PACKAGE}/data_dir || true
+  db_go || true
+  db_get {PACKAGE}/data_dir
+  case "$RET" in
+    /*) break ;;
+  esac
+  db_input high {PACKAGE}/data_dir_invalid || true
+  db_go || true
+  db_fset {PACKAGE}/data_dir seen false
+done
+exit 0
 """
 
 POSTINST = f"""#!/bin/sh
 set -e
+. /usr/share/debconf/confmodule
 PREFIX="{PREFIX}"
-DATA="{DATA_DIR}"
 
 case "$1" in
   configure)
+    db_get {PACKAGE}/data_dir || true
+    DATA="$RET"
+    case "$DATA" in
+      /*) ;;
+      *) echo "{PACKAGE}: data directory '$DATA' is not absolute, using {DATA_DIR}" >&2
+         DATA="{DATA_DIR}" ;;
+    esac
+    DATA=$(printf '%s' "$DATA" | sed 's:/*$::')
+    [ -n "$DATA" ] || DATA="{DATA_DIR}"
+
     if ! getent passwd pta >/dev/null; then
       adduser --system --group --home "$DATA" --no-create-home --quiet pta
     fi
+    # Group-writable with the setgid bit: the service (user pta) and the
+    # people in group pta (the control window) share one directory.
     mkdir -p "$DATA/config" "$DATA/data" "$DATA/logs"
-    chown -R pta:pta "$DATA"
+    chown pta:pta "$DATA" "$DATA/config" "$DATA/data" "$DATA/logs"
     chmod 2775 "$DATA" "$DATA/config" "$DATA/data" "$DATA/logs"
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != root ] && ! id -nG "$SUDO_USER" | grep -qw pta; then
+      adduser --quiet "$SUDO_USER" pta || true
+      echo "{PACKAGE}: $SUDO_USER added to group pta (log out and in again for it to take effect)"
+    fi
+
+    # What the service and the control window read. Not a conffile: it
+    # is generated from the debconf answer, and the config script reads
+    # it back, so a hand edit survives an upgrade too.
+    cat > "{DEFAULTS_FILE}" <<EOF
+# Precision Touchdown Analyzer - written by the {PACKAGE} package.
+# Change it with: dpkg-reconfigure {PACKAGE}
+TOUCHDOWN_ANALYZER_HOME=$DATA
+EOF
 
     # A virtual environment from the system python, filled from the wheels
     # shipped in the package - no network needed.
@@ -89,17 +170,19 @@ case "$1" in
       || {{ echo "pta: offline wheel install failed (python $(python3 --version 2>&1)); trying PyPI" >&2;
            "$PREFIX/venv/bin/python" -m pip install --quiet --find-links "$PREFIX/wheels" --upgrade "touchdown_analyzer[ui,analysis]"; }}
     ln -sf "$PREFIX/venv/bin/touchdown-analyzer" /usr/bin/touchdown-analyzer
-    ln -sf "$PREFIX/venv/bin/touchdown-analyzer-launcher" /usr/bin/touchdown-analyzer-launcher
-    ln -sf "$PREFIX/venv/bin/touchdown-analyzer-launcher" /usr/bin/pta
+    ln -sf "$PREFIX/bin/launcher" /usr/bin/touchdown-analyzer-launcher
+    ln -sf "$PREFIX/bin/launcher" /usr/bin/pta
 
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload || true
+      if systemctl is-active --quiet pta 2>/dev/null; then systemctl restart pta || true; fi
       echo "Precision Touchdown Analyzer installed. Web server: systemctl enable --now pta"
       echo "(then http://<this machine>:8080). Data under $DATA."
     fi
     if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q || true; fi
     ;;
 esac
+db_stop || true
 exit 0
 """
 
@@ -121,7 +204,27 @@ case "$1" in
     if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload || true; fi
     ;;
   purge)
-    rm -rf "{PREFIX}" "{DATA_DIR}"
+    # The data directory as configured - from the defaults file, else the
+    # debconf answer, else the default.
+    DATA="{DATA_DIR}"
+    TOUCHDOWN_ANALYZER_HOME=
+    if [ -r "{DEFAULTS_FILE}" ]; then
+      . "{DEFAULTS_FILE}"
+      [ -n "$TOUCHDOWN_ANALYZER_HOME" ] && DATA="$TOUCHDOWN_ANALYZER_HOME"
+    fi
+    if [ -f /usr/share/debconf/confmodule ]; then
+      . /usr/share/debconf/confmodule
+      if [ -z "$TOUCHDOWN_ANALYZER_HOME" ] && db_get {PACKAGE}/data_dir; then
+        [ -n "$RET" ] && DATA="$RET"
+      fi
+      db_purge || true
+    fi
+    rm -f "{DEFAULTS_FILE}"
+    case "$DATA" in
+      /|"") ;;
+      *) rm -rf "$DATA" ;;
+    esac
+    rm -rf "{PREFIX}"
     if getent passwd pta >/dev/null; then deluser --system --quiet pta || true; fi
     ;;
 esac
@@ -137,9 +240,8 @@ Wants=network-online.target
 Type=simple
 User=pta
 Group=pta
-WorkingDirectory={DATA_DIR}
-Environment=TOUCHDOWN_ANALYZER_HOME={DATA_DIR}
-ExecStart={PREFIX}/venv/bin/touchdown-analyzer serve --host 0.0.0.0 --port 8080 --root {DATA_DIR}/data/raw
+EnvironmentFile=-{DEFAULTS_FILE}
+ExecStart={PREFIX}/bin/serve --host 0.0.0.0 --port 8080
 Restart=on-failure
 RestartSec=5
 
@@ -164,9 +266,35 @@ Copyright: 2026 Intrinsic Engineering GmbH
 License: see /opt/pta/LICENSE
 """
 
+# The service's entry point: the data directory from /etc/default/pta
+# (systemd's WorkingDirectory= cannot come from an EnvironmentFile, so the
+# change of directory happens here).
+SERVE = f"""#!/bin/sh
+# Precision Touchdown Analyzer web server, as run by pta.service.
+set -e
+if [ -z "$TOUCHDOWN_ANALYZER_HOME" ] && [ -r "{DEFAULTS_FILE}" ]; then
+  . "{DEFAULTS_FILE}"
+fi
+: "${{TOUCHDOWN_ANALYZER_HOME:={DATA_DIR}}}"
+export TOUCHDOWN_ANALYZER_HOME
+mkdir -p "$TOUCHDOWN_ANALYZER_HOME/data/raw" "$TOUCHDOWN_ANALYZER_HOME/config"
+cd "$TOUCHDOWN_ANALYZER_HOME"
+exec "{PREFIX}/venv/bin/touchdown-analyzer" serve --root "$TOUCHDOWN_ANALYZER_HOME/data/raw" "$@"
+"""
+
+# The control window: the configured data directory when this user may
+# write there (members of group pta), else a per-user one under
+# ~/.local/share/pta.
 WRAPPER = f"""#!/bin/sh
-# Runs the control window with the per-user data directory (the systemd
-# service uses {DATA_DIR} instead).
+# Precision Touchdown Analyzer control window (the desktop entry and `pta`).
+if [ -z "$TOUCHDOWN_ANALYZER_HOME" ] && [ -r "{DEFAULTS_FILE}" ]; then
+  . "{DEFAULTS_FILE}"
+fi
+if [ -n "$TOUCHDOWN_ANALYZER_HOME" ] && [ -w "$TOUCHDOWN_ANALYZER_HOME" ]; then
+  export TOUCHDOWN_ANALYZER_HOME
+else
+  unset TOUCHDOWN_ANALYZER_HOME
+fi
 exec "{PREFIX}/venv/bin/touchdown-analyzer-launcher" "$@"
 """
 
@@ -275,6 +403,8 @@ def control_tar(size_kb: int, md5sums: str) -> bytes:
         for name, text, mode in (
             ("control", CONTROL.replace("{size_kb}", str(size_kb)), 0o644),
             ("md5sums", md5sums, 0o644),
+            ("templates", TEMPLATES, 0o644),
+            ("config", CONFIG, 0o755),
             ("postinst", POSTINST, 0o755),
             ("prerm", PRERM, 0o755),
             ("postrm", POSTRM, 0o755),
@@ -300,6 +430,7 @@ def build(out_dir: Path, wheels: list[Path], icon: Path | None) -> Path:
         tree.add(f"{PREFIX}/wheels/{wheel.name}", wheel.read_bytes())
     tree.add(f"{PREFIX}/LICENSE", (ROOT / "LICENSE").read_bytes())
     tree.add(f"{PREFIX}/bin/launcher", WRAPPER.encode(), 0o755)
+    tree.add(f"{PREFIX}/bin/serve", SERVE.encode(), 0o755)
     tree.add("/lib/systemd/system/pta.service", SERVICE.encode())
     tree.add(f"/usr/share/applications/{PACKAGE}.desktop", DESKTOP.encode())
     tree.add(f"/usr/share/doc/{PACKAGE}/copyright", COPYRIGHT.encode())

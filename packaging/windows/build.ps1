@@ -9,18 +9,30 @@
       pip install -e ".[ui,analysis]" pyinstaller
       .\packaging\windows\build.ps1
 
-  Steps: icon -> PyInstaller application folder -> zip -> PyInstaller setup
-  program with the zip inside. To ship ffmpeg with the program, put
-  ffmpeg.exe and ffprobe.exe into vendor\ffmpeg\ first (the gyan.dev
-  "essentials" build works); otherwise the installed program looks for
-  ffmpeg on PATH and the control window says so if it is missing.
+  Steps: ffmpeg -> icon -> PyInstaller application folder -> zip ->
+  PyInstaller setup program with the zip inside. ffmpeg.exe and ffprobe.exe
+  are downloaded once into vendor\ffmpeg\ (fetch_ffmpeg.py: gyan.dev
+  "essentials" release, checksum verified) and installed as tools\ next to
+  the program, so nothing needs to be on PATH at the airfield. -NoFfmpeg
+  skips that; the installed program then looks for ffmpeg on PATH and the
+  control window says so if it is missing.
+
+.PARAMETER NoFfmpeg
+  Do not download or bundle ffmpeg.
 #>
+param([switch]$NoFfmpeg)
 # "Continue": PyInstaller logs to stderr, which Windows PowerShell 5.1 would
 # otherwise turn into a terminating error; exit codes are checked instead.
 $ErrorActionPreference = "Continue"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $root
 $python = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "python" }
+
+if (-not $NoFfmpeg) {
+  Write-Host "== ffmpeg"
+  & $python packaging\windows\fetch_ffmpeg.py
+  if ($LASTEXITCODE -ne 0) { throw "fetching ffmpeg failed (use -NoFfmpeg to build without it)" }
+}
 
 Write-Host "== icon"
 & $python packaging\make_icon.py packaging\out
@@ -38,6 +50,13 @@ Copy-Item LICENSE "$app\LICENSE.txt" -Force
 Write-Host "== smoke test of the folder"
 & "$app\touchdown-analyzer.exe" --version
 if ($LASTEXITCODE -ne 0) { throw "the built CLI does not run" }
+if (-not $NoFfmpeg) {
+  # PyInstaller 6 puts data files under _internal\; paths.bundled_tool looks there too.
+  $bundled = Get-ChildItem $app -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+  if (-not $bundled) { throw "ffmpeg.exe is missing from the application folder" }
+  & $bundled.FullName -version | Select-Object -First 1
+  if ($LASTEXITCODE -ne 0) { throw "the bundled ffmpeg does not run" }
+}
 
 Write-Host "== app.zip"
 if (Test-Path build\app.zip) { Remove-Item build\app.zip -Force }

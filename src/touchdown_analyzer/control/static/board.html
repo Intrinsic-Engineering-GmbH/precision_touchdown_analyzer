@@ -104,7 +104,7 @@ body.asleep { cursor:none; }
   </svg>
   <div>
     <div class="name">Precision Touchdown Analyzer</div>
-    <div class="session" id="title">Spot landing results</div>
+    <div class="session" id="title">Live Ranking</div>
   </div>
   <div class="right">
     <div class="rules" id="rules"></div>
@@ -276,7 +276,7 @@ async function refresh() {
     rules = await api("/api/scoring");
     landings = session ? (await api(`/api/landings/${encodeURIComponent(session)}`)).landings : [];
     lastOk = Date.now();
-    $("title").textContent = session ? sessionTitle(session) : "Spot landing results";
+    $("title").textContent = session ? sessionTitle(session) : "Live Ranking";
     $("rules").textContent = rules ? `${rules.name || "scoring"} · ${rules.max_points} pts on the line` : "";
   } catch (e) {
     // keep showing what we had; the dot goes red below
