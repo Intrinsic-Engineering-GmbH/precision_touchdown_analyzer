@@ -11,6 +11,11 @@ aircraft, tracks its wheel to the instant of contact and maps that pixel onto
 the ground plane through a one-time calibration. A judge confirms each landing
 in the browser.
 
+<img width="1427" height="1165" alt="image" src="https://github.com/user-attachments/assets/3756b6af-1bf5-4ca8-941b-10ab724513a6" />
+
+<img width="1689" height="951" alt="2026-09-14_13h38_17" src="https://github.com/user-attachments/assets/c2719deb-bfd8-4844-a5af-063067819b36" />
+
+
 ## Install
 
 **Windows** - run `PTA-Setup-<version>.exe`. It installs for all users to
