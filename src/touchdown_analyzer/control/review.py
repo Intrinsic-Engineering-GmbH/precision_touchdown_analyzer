@@ -16,7 +16,7 @@ from touchdown_analyzer.clips import cutter
 from touchdown_analyzer.control.service import CaptureService, ServiceError
 from touchdown_analyzer.identify import ogn
 from touchdown_analyzer.store import landings as store_mod
-from touchdown_analyzer.store import scoring
+from touchdown_analyzer.store import ranking, scoring
 from touchdown_analyzer.store.landings import Landing, LandingStore
 
 log = logging.getLogger(__name__)
@@ -253,7 +253,7 @@ class ReviewService:
         landing.status = store_mod.CONFIRMED
         landing.confirmed_utc = store_mod.now_utc()
         self._rename_clip(landing)
-        return store.update(landing, "confirmed", **detail)
+        return self._changed(store.update(landing, "confirmed", **detail))
 
     def reject(self, session: str, landing_id: str, *, note: str = "") -> Landing:
         store = self.store(session)
@@ -261,14 +261,14 @@ class ReviewService:
         landing.status = store_mod.REJECTED
         if note:
             landing.note = note
-        return store.update(landing, "rejected")
+        return self._changed(store.update(landing, "rejected"))
 
     def reopen(self, session: str, landing_id: str) -> Landing:
         store = self.store(session)
         landing = self.landing(session, landing_id)
         landing.status = store_mod.PENDING
         landing.confirmed_utc = None
-        return store.update(landing, "reopened")
+        return self._changed(store.update(landing, "reopened"))
 
     def edit(
         self,
@@ -355,7 +355,7 @@ class ReviewService:
             self._render_overlay(landing)
         if landing.status == store_mod.CONFIRMED:
             self._rename_clip(landing)
-        return store.update(landing, "edited", **detail)
+        return self._changed(store.update(landing, "edited", **detail))
 
     def _render_overlay(self, landing: Landing) -> None:
         """Redraw the overlay for the frame the landing is now scored at."""
@@ -471,6 +471,7 @@ class ReviewService:
 
     def summary(self, session: str) -> dict[str, Any]:
         items = self.store(session).all()
+        self.export(session)
         return {
             "session": session,
             "count": len(items),
@@ -479,6 +480,44 @@ class ReviewService:
             "rejected": sum(x.status == store_mod.REJECTED for x in items),
             "landings": [self.scored(x) for x in items],
         }
+
+    # -- the ranking on paper ---------------------------------------------------
+
+    def _changed(self, landing: Landing) -> Landing:
+        """After one of the judge's edits: the files must show it at once."""
+        self.export(landing.session, force=True)
+        return landing
+
+    def export_paths(self, session: str) -> tuple[Path, Path]:
+        directory = self.store(session).directory
+        return directory / ranking.XLSX_NAME, directory / ranking.PDF_NAME
+
+    def export(self, session: str, *, force: bool = False) -> tuple[Path, Path] | None:
+        """Write ``ranking.xlsx`` / ``ranking.pdf`` when the board would have changed.
+
+        Called on every read of the summary - the board and the judge's page
+        poll it every few seconds - so a landing added by the analyser, or by
+        an ``analyze`` run in a terminal, or a change of the rules, reaches
+        the files without anyone asking. Two ``stat`` calls when nothing has
+        changed; the judge's own edits pass ``force`` and skip the check. A
+        session with no landings.json yet gets no files.
+        """
+        store = self.store(session)
+        if not store.path.is_file():
+            return None
+        xlsx, pdf = self.export_paths(session)
+        if not force:
+            inputs = max(_mtime(store.path), _mtime(self.config_dir / scoring.CONFIG_NAME))
+            if min(_mtime(xlsx), _mtime(pdf)) >= inputs:
+                return xlsx, pdf
+        try:
+            return ranking.export(
+                store.directory, session, [self.scored(x) for x in store.all()], self.rules
+            )
+        except OSError as exc:
+            # A file open in Excel is the usual cause; the board is unaffected.
+            log.warning("could not write the ranking files for %s: %s", session, exc)
+            return None
 
     # -- scoring --------------------------------------------------------------
 
@@ -503,3 +542,10 @@ class ReviewService:
         self.rules = rules
         scoring.save(self.config_dir, rules)
         return rules.as_dict()
+
+
+def _mtime(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return -1

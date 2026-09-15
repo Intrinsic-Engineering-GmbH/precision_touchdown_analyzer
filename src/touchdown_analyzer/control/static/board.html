@@ -144,6 +144,8 @@ body.asleep { cursor:none; }
   </div>
   <div class="corner">
     <a href="/landings">judge</a>
+    <a id="xlsxLink" href="#" hidden>excel</a>
+    <a id="pdfLink" href="#" hidden>pdf</a>
     <button type="button" id="themeBtn">light / dark</button>
     <button type="button" id="fullBtn">full screen</button>
   </div>
@@ -277,6 +279,11 @@ async function refresh() {
     landings = session ? (await api(`/api/landings/${encodeURIComponent(session)}`)).landings : [];
     lastOk = Date.now();
     $("title").textContent = session ? sessionTitle(session) : "Live Ranking";
+    // the same ranking as a file, kept up to date by the server
+    for (const [id, ext] of [["xlsxLink", "xlsx"], ["pdfLink", "pdf"]]) {
+      $(id).href = session ? `/api/landings/${encodeURIComponent(session)}/ranking.${ext}` : "#";
+      $(id).hidden = !session;
+    }
     $("rules").textContent = rules ? `${rules.name || "scoring"} · ${rules.max_points} pts on the line` : "";
   } catch (e) {
     // keep showing what we had; the dot goes red below

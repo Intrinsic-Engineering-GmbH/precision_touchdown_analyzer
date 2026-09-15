@@ -215,6 +215,7 @@ video { width:100%; border-radius:8px; background:#000; margin-top:12px; }
 <div class="toolbar">
   <label class="field">Session <select id="session"></select></label>
   <span class="muted" id="calNote"></span>
+  <span class="muted" id="files" hidden>ranking as <a id="xlsxLink" href="#">Excel</a> · <a id="pdfLink" href="#">PDF</a></span>
 </div>
 
 <div class="note" id="err" hidden></div>
@@ -364,7 +365,11 @@ async function loadLandings() {
     const r = await api(`/api/landings/${encodeURIComponent(session)}`);
     list = r.landings;
     $("counts").textContent = `${r.pending} pending · ${r.confirmed} confirmed`;
-  } catch (e) { list = []; }
+    // the server rewrites ranking.xlsx / ranking.pdf whenever the results change
+    $("xlsxLink").href = `/api/landings/${encodeURIComponent(session)}/ranking.xlsx`;
+    $("pdfLink").href = `/api/landings/${encodeURIComponent(session)}/ranking.pdf`;
+    $("files").hidden = !r.count;
+  } catch (e) { list = []; $("files").hidden = true; }
   renderList();
   if (!current && list.length) {
     const first = list.filter(x => x.kind === "landing" && x.status === "pending")[0]

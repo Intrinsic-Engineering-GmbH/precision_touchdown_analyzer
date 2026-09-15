@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "touchdown-analyzer"
-version = "0.1.0"
+version = "1.0.0"
 description = "Video-based landing accuracy measurement for glider spot-landing competitions"
 readme = "README.md"
 # 3.12+ because numpy 2.5 (used by the calibration solver) requires it.
@@ -51,6 +51,8 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 "tools/*" = ["E501"]
 # Embedded shell/systemd templates: long lines are the scripts' own.
 "packaging/debian/build_deb.py" = ["E501"]
+# Embedded OOXML templates: the long lines are the schema URIs.
+"src/touchdown_analyzer/store/ranking.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

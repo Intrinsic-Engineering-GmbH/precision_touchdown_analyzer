@@ -421,6 +421,125 @@ def test_scores_come_with_the_landings_and_rules_can_be_changed(client: TestClie
     assert client.get("/scoring").status_code == 200
 
 
+# --------------------------------------------------------------------------
+# the ranking as files
+# --------------------------------------------------------------------------
+
+
+def scored(**overrides) -> dict:
+    base = {
+        "id": "L0001",
+        "kind": "landing",
+        "status": "confirmed",
+        "outcome": "measured",
+        "touchdown_utc": TD,
+        "pilot": "",
+        "registration": "",
+        "competition_number": "",
+        "aircraft_type": "",
+        "scored_longitudinal_m": -1.9,
+        "label": "-1.9 m",
+        "score": 90,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_ranking_groups_and_orders_like_the_board() -> None:
+    from touchdown_analyzer.store import ranking
+
+    result = ranking.rank(
+        [
+            scored(id="L0001", pilot="anna", registration="HB-3213", score=90),
+            scored(id="L0002", pilot="Beat", score=100, touchdown_utc="2026-09-13T12:10:00+00:00"),
+            # same pilot, later spelling wins, aircraft collected
+            scored(
+                id="L0003",
+                pilot="Anna",
+                registration="HB-1234",
+                score=95,
+                touchdown_utc="2026-09-13T12:20:00+00:00",
+            ),
+            # no pilot: the aircraft stands in
+            scored(
+                id="L0004",
+                registration="D-KXYZ",
+                score=100,
+                touchdown_utc="2026-09-13T12:30:00+00:00",
+            ),
+            scored(id="L0005", status="pending", registration="HB-9999", score=None),
+            scored(id="L0006", status="rejected", pilot="Nobody"),
+            scored(id="L0007", kind="pass", outcome="on_ground", status="confirmed", score=None),
+        ]
+    )
+    assert [(g.name, g.total, len(g.landings)) for g in result.ranked] == [
+        ("Anna", 185, 2),
+        ("Beat", 100, 1),
+        ("D-KXYZ", 100, 1),
+    ]
+    assert result.ranked[0].aircraft == ["HB-3213", "HB-1234"]
+    assert [x["id"] for x in result.pending] == ["L0005"]
+    assert result.confirmed == 4
+
+
+def test_ranking_files_are_written_and_kept_current(client: TestClient, tmp_path: Path) -> None:
+    import zipfile
+
+    out = tmp_path / "landings" / "2026-09-13"
+    xlsx, pdf = out / "ranking.xlsx", out / "ranking.pdf"
+    # the first read of the summary writes them; nothing is confirmed yet
+    client.get("/api/landings/2026-09-13")
+    assert xlsx.is_file() and pdf.is_file()
+    assert pdf.read_bytes().startswith(b"%PDF-1.4") and pdf.read_bytes().rstrip().endswith(b"%%EOF")
+
+    # the judge's edits show up in the files at once
+    client.post(
+        "/api/landings/2026-09-13/L0001/confirm",
+        json={"pilot": "Anna Muster", "registration": "HB-3213"},
+    )
+    with zipfile.ZipFile(xlsx) as zf:
+        sheet = zf.read("xl/worksheets/sheet1.xml").decode()
+        assert "Anna Muster" in sheet and "HB-3213" in sheet
+        assert zf.testzip() is None
+        assert "Landings" in zf.read("xl/workbook.xml").decode()
+    assert b"Anna Muster" in pdf.read_bytes() and b"(90)" in pdf.read_bytes()
+
+    # a change of the rules is picked up on the next read
+    client.post("/api/scoring", json={"max_points": 1000, "short_per_m": 50, "long_per_m": 20})
+    client.get("/api/landings/2026-09-13")
+    assert b"(905)" in pdf.read_bytes()
+
+    # ... and nothing is rewritten while nothing changes
+    before = (xlsx.stat().st_mtime_ns, pdf.stat().st_mtime_ns)
+    client.get("/api/landings/2026-09-13")
+    assert (xlsx.stat().st_mtime_ns, pdf.stat().st_mtime_ns) == before
+
+    # downloads
+    r = client.get("/api/landings/2026-09-13/ranking.xlsx")
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+    assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert "ranking-2026-09-13.xlsx" in r.headers["content-disposition"]
+    r = client.get("/api/landings/2026-09-13/ranking.pdf")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert client.get("/api/landings/2099-01-01/ranking.pdf").status_code == 404
+
+
+def test_pdf_pages_break_and_odd_characters_survive(tmp_path: Path) -> None:
+    import zipfile
+
+    from touchdown_analyzer.store import ranking, scoring
+
+    # e-acute is in the PDF's WinAnsi font encoding, the CJK character is not
+    many = [scored(id=f"L{i:04d}", pilot=f"Pilot {i} é中", score=i % 100) for i in range(1, 121)]
+    xlsx, pdf = ranking.export(tmp_path, "2026-09-13", many, scoring.ScoringRules())
+    data = pdf.read_bytes()
+    pages = data.count(b"/Type /Page ")
+    assert pages > 1 and b"page 1 of %d" % pages in data and b"/Count %d" % pages in data
+    assert b"Pilot 120 \xe9?" in data
+    with zipfile.ZipFile(xlsx) as zf:
+        assert "Pilot 120 é中" in zf.read("xl/worksheets/sheet2.xml").decode("utf-8")
+
+
 def test_board_page_is_served(client: TestClient) -> None:
     r = client.get("/board")
     assert r.status_code == 200 and "Results board" in r.text

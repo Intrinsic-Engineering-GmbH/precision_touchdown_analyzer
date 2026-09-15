@@ -211,6 +211,30 @@ def create_app(service: CaptureService, review: ReviewService | None = None) -> 
     async def landings(session: str) -> dict[str, Any]:
         return review.summary(session)
 
+    # before /{landing_id}, which would otherwise take "ranking.xlsx" for an id
+    @app.get("/api/landings/{session}/ranking.xlsx", include_in_schema=False)
+    async def ranking_xlsx(session: str) -> FileResponse:
+        return _ranking_file(
+            session, 0, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    @app.get("/api/landings/{session}/ranking.pdf", include_in_schema=False)
+    async def ranking_pdf(session: str) -> FileResponse:
+        return _ranking_file(session, 1, "application/pdf")
+
+    def _ranking_file(session: str, which: int, media_type: str) -> FileResponse:
+        """The ranking as a file, brought up to date first if it is behind."""
+        paths = review.export(session)
+        if paths is None:
+            raise HTTPException(status_code=404, detail=f"no results for {session}")
+        path = paths[which]
+        return FileResponse(
+            path,
+            media_type=media_type,
+            filename=f"ranking-{session}{path.suffix}",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/api/landings/{session}/{landing_id}")
     async def landing(session: str, landing_id: str) -> dict[str, Any]:
         return review.scored(review.landing(session, landing_id))
